@@ -157,7 +157,23 @@ Use the same `rounds=`, `base=`, and `repos=` arguments passed to `/ship`. For m
 Treat `/review-cycle` as the blocker gate:
 
 - If `/review-cycle` returns `clean`, continue to commit and PR.
-- If it returns `partial` with only false positives or accepted non-blockers, continue only after documenting the rationale in the PR body.
+- If it returns `partial`, branch on the reason recorded in
+  `Skipped reviewers` or `Accepted P2`:
+  - **Partial because Copilot CLI was skipped** (org policy block,
+    network failure, missing auth, etc.): open the PR as a **draft**
+    so the Copilot bot can review post-push before merge candidacy.
+    Address bot findings, rerun `/review-cycle`, then `gh pr ready`
+    when the cycle returns clean.
+  - **Partial because a different required reviewer was skipped**
+    (codex unavailable, claude-subprocess auth fails): open as
+    draft and call out the skip in the PR body so a human can
+    decide whether the remaining reviewer coverage is sufficient.
+    Don't mark ready until the skipped reviewer can run or a human
+    explicitly accepts the gap.
+  - **Partial with only accepted P2 / accepted non-blockers**:
+    continue, but copy the `Accepted P2` and `Accepted non-blockers`
+    fields from the report into the PR body so human reviewers see
+    the deliberate choices.
 - If it returns `blocked`, stop before opening ready PRs. Open draft PRs only when the user passed `draft` or a draft would help expose the blocker.
 - If `/review-cycle` changed files, rerun the relevant validation and documentation checks before committing.
 

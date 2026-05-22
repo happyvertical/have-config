@@ -309,12 +309,16 @@ For each round, process repositories in dependency order:
 8. Rerun relevant validation after edits.
 9. If upstream fixes change the contract consumed downstream, rerun affected downstream validation and review even if that downstream repo had already passed in the current round.
 10. **If a P0/P1/P2 fix was pushed in this round, the next round MUST run** to verify the fix didn't break something. Do not stop on a P0/P1/P2 fix-round.
-11. Stop the loop as clean when **a verify round returns no P0/P1/P2
-    findings from any reviewer** in any included repo and validation
-    is green across the graph. P3/nit findings at exit time get
-    recorded in the final report, not fixed in this PR (consumers
-    like `/ship` are responsible for surfacing them in the PR body
-    when the PR exists).
+11. Stop the loop as clean when **a verify round returns no
+    *unaccepted* P0/P1/P2 findings from any reviewer** in any
+    included repo and validation is green across the graph.
+    Reviewers may continue surfacing an accepted P2 in subsequent
+    rounds (they have no way to know it was accepted); the
+    acceptance lives in the final report, and the stop condition
+    discounts it. P3/nit findings at exit time get recorded in the
+    final report, not fixed in this PR (consumers like `/ship`
+    are responsible for surfacing them in the PR body when the PR
+    exists).
 
 If the loop hits the round cap:
 
