@@ -5,39 +5,41 @@ on:
     branches:
       - main
 
-# Single in-flight release workflow per ref. Built-ins, not user input.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
   contents: write
-  pull-requests: write
   packages: write    # publish to GitHub Packages
   id-token: write    # attestations
 
 jobs:
   release:
-    name: Release packages
+    name: Direct-publish
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Skip the workflow's own chore(release) commits. Without this guard,
+    # every release commit would trigger another (no-op) run. The
+    # auto-changeset script would catch it too, but skipping at job level
+    # saves the runner.
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
     steps:
       # Mint a token from the HAVE_RELEASE GitHub App (org-wide secret
-      # pair). Used as GITHUB_TOKEN (for the Version Packages PR) and
-      # NODE_AUTH_TOKEN (for npm publish to npm.pkg.github.com). This
-      # mirrors the smrt/sdk publish pattern — the org standard is GH
-      # Packages, not npmjs.org, so no separate NPM_TOKEN is needed.
+      # pair). Used as GITHUB_TOKEN (for the chore(release) push back to
+      # main) and NODE_AUTH_TOKEN (for `changeset publish` to
+      # npm.pkg.github.com). Same pattern as smrt.
       - name: Generate token from GitHub App
-        id: generate_token
+        id: token
         uses: tibdex/github-app-token@v2
         with:
           app_id: ${{ secrets.HAVE_RELEASE_APP_ID }}
           private_key: ${{ secrets.HAVE_RELEASE_APP_PRIVATE_KEY }}
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           fetch-depth: 0
-          token: ${{ steps.generate_token.outputs.token }}
+          token: ${{ steps.token.outputs.token }}
 
       - uses: pnpm/action-setup@v4
         with:
@@ -52,21 +54,63 @@ jobs:
 
       - name: Install dependencies
         env:
-          NODE_AUTH_TOKEN: ${{ steps.generate_token.outputs.token }}
+          NODE_AUTH_TOKEN: ${{ steps.token.outputs.token }}
         run: pnpm install --frozen-lockfile
 
-      # changesets/action either opens a Version Packages PR (when
-      # changesets exist) or publishes (when only version-bumped
-      # package.json files remain). All inputs are workflow-controlled
-      # strings; secrets are by definition safe to reference.
-      - name: Create release PR or publish
-        uses: changesets/action@v1
-        with:
-          publish: pnpm release
-          version: pnpm version-packages
-          commit: "chore(release): version packages"
-          title: "chore(release): version packages"
+      - name: Configure git identity
+        run: |
+          # Use a neutral bot identity so commits clearly attribute to the
+          # release workflow, not a person. Email format matches GitHub's
+          # noreply pattern for bots.
+          git config user.name "have-release-bot"
+          git config user.email "have-release[bot]@users.noreply.github.com"
+
+      - name: Auto-changeset, version, commit, publish
         env:
-          GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
-          NODE_AUTH_TOKEN: ${{ steps.generate_token.outputs.token }}
-          NPM_TOKEN: ${{ steps.generate_token.outputs.token }}
+          GITHUB_TOKEN: ${{ steps.token.outputs.token }}
+          NODE_AUTH_TOKEN: ${{ steps.token.outputs.token }}
+          NPM_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          set -euo pipefail
+
+          # Use eslint-config as the canonical version source (all three
+          # packages are version-locked by auto-changeset).
+          BEFORE=$(node -p "require('./packages/eslint-config/package.json').version")
+          echo "::group::Before"
+          echo "Version before: $BEFORE"
+          echo "::endgroup::"
+
+          # 1. Generate a changeset from conventional commits since the
+          #    last release (or defer if a manual changeset is present).
+          pnpm changeset:auto
+
+          # 2. Apply changesets — bumps package.json files + writes
+          #    CHANGELOG.md entries + deletes consumed .changeset/*.md.
+          pnpm changeset:version
+
+          AFTER=$(node -p "require('./packages/eslint-config/package.json').version")
+          echo "::group::After"
+          echo "Version after: $AFTER"
+          echo "::endgroup::"
+
+          if [ "$BEFORE" = "$AFTER" ]; then
+            echo "No version change — nothing to publish."
+            exit 0
+          fi
+
+          echo "Bumping $BEFORE → $AFTER"
+
+          # 3. Commit the version bumps + changelog entries. The chore
+          #    prefix matches what the job-level `if:` guard filters.
+          git add -A
+          git commit -m "chore(release): v$AFTER"
+
+          # 4. Publish to GitHub Packages. `changeset publish` also
+          #    creates per-package git tags (e.g.
+          #    `@happyvertical/eslint-config@0.2.0`).
+          pnpm changeset:publish
+
+          # 5. Push the release commit AND the tags created by publish.
+          #    --follow-tags ensures any annotated/lightweight tags
+          #    pointing at HEAD go with the push.
+          git push --follow-tags origin main
