@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * Auto-generate Changesets from conventional commits.
  *

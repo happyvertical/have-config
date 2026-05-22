@@ -58,8 +58,6 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Configure git identity
-        env:
-          BOT_ACTOR_ID: ${{ secrets.HAVE_RELEASE_APP_ID }}
         run: |
           # Use a neutral bot identity so commits clearly attribute to the
           # release workflow, not a person. Email format matches GitHub's
