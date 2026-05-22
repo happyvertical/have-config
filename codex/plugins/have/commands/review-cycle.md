@@ -205,27 +205,32 @@ gh copilot -- -p "$(pr-review --base <base> --pretty)" \
   --effort xhigh
 ```
 
-**Why the path-scoping is a three-part lock**, not just `--add-dir`:
+The `-C` / `--add-dir` / `--disallow-temp-dir` trio is **scope
+hygiene**, not a security boundary: they keep the reviewer focused
+on the repo and prevent it from wandering into unrelated files in
+your `/tmp` or wherever else the shell was invoked from. That
+reduces noise in findings — not a vulnerability fix. The reviewer
+is running locally with your credentials and can already see
+anything you can see; that's how local CLI tools work.
 
-- `-C "$REPO_ROOT"` sets the working directory explicitly. Without
-  this, the CLI's default "current dir" is whatever shell invoked
-  it, which may not be the repo root.
-- `--add-dir "$REPO_ROOT"` adds the repo to the allowed-dirs list.
-- `--disallow-temp-dir` removes the system temp dir from the default
-  allowlist. Without this flag, Copilot can still read `/tmp` and
-  similar even when `--add-dir` is set, because `--add-dir` *adds*
-  rather than *replaces* the default path set.
+**When stricter sandboxing actually matters** (and the above flags
+are insufficient — you need a sanitized temp checkout):
+- Reviewing PRs from untrusted contributors (OSS maintainership)
+  where the diff could contain prompt-injection asking the model to
+  read your `.env` and quote it into findings the contributor sees
+- CI environments where the reviewer runs unattended and findings
+  get auto-posted to public PR comments
+- Workspaces with secrets in untracked files that you don't want
+  surfaced even in your own review output
 
-Combined with the per-command allowlist, the review surface is
-"git read-only commands + repo-bounded shell utilities, no
-$HOME/$TMPDIR access" — no exfiltration path even if a prompt-
-injected commit subject or diff hunk asks Copilot to read
-`$HOME/.aws/credentials` or `/tmp/secrets`.
+For the normal HappyVertical case — engineer reviewing their own
+org's PR pre-push, findings going to their own terminal — none of
+that applies. The flags above are enough.
 
-Add `--deny-tool` for anything dangerous you want hard-blocked even if
-the model later requests it. The pattern enforces read-only at the
-permission layer with repo-scoped file access; the prompt's "don't
-modify files" instruction is defense-in-depth.
+Add `--deny-tool` for any specific commands you want hard-blocked.
+The per-command `--allow-tool` allowlist is the actual enforcement
+of "no write tools"; the prompt's "don't modify files" instruction
+is defense-in-depth.
 
 - Use `--pretty` so Copilot receives the prompt as readable markdown
   rather than the JSON-instruction format.
