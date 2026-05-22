@@ -1,0 +1,19 @@
+{
+  "name": "have-config",
+  "version": "0.0.0",
+  "private": true,
+  "description": "HappyVertical shared cross-repo configuration (workspace root).",
+  "type": "module",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.29.0"
+  }
+}

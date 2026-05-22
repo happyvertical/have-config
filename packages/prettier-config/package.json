@@ -1,0 +1,34 @@
+{
+  "name": "@happyvertical/prettier-config",
+  "version": "0.1.0",
+  "description": "HappyVertical shared Prettier configuration.",
+  "license": "MIT",
+  "homepage": "https://github.com/happyvertical/have-config/tree/main/packages/prettier-config",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/happyvertical/have-config.git",
+    "directory": "packages/prettier-config"
+  },
+  "main": "./index.js",
+  "type": "module",
+  "exports": {
+    ".": "./index.js"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  },
+  "files": [
+    "index.js",
+    "README.md"
+  ],
+  "peerDependencies": {
+    "prettier": "^3.0.0"
+  },
+  "keywords": [
+    "prettier",
+    "prettier-config",
+    "happyvertical",
+    "config"
+  ]
+}

@@ -12,12 +12,13 @@ land here as second consumers appear.
 **In scope:**
 
 - Slash commands for Claude Code and Codex (`claude/`, `codex/`)
-- MCP server configs consumed by ≥2 projects (planned)
-- Agent hook scripts (planned)
-- Shared lint / format / tsconfig bases (planned, when a second consumer
-  emerges — until then each repo keeps its own)
+- Shared lint / format / tsconfig configs as published npm packages
+  (`packages/eslint-config`, `packages/prettier-config`,
+  `packages/tsconfig-base`)
+- MCP server configs consumed by ≥2 projects (planned — `TODO.md`)
+- Agent hook scripts (planned — `TODO.md`)
 - CLAUDE.md / AGENTS.md template sections that should be identical across
-  repos (planned — currently each repo carries its own copy)
+  repos (planned — `TODO.md`)
 
 **Out of scope:**
 
@@ -37,8 +38,12 @@ add something used by only one repo, put it in that repo.
 have-config/
 ├── README.md
 ├── LICENSE
-├── install.sh                       # one-line setup
+├── install.sh                       # one-line setup (agents)
 ├── TODO.md                          # planned additions, with consumer count
+├── package.json                     # pnpm workspace root
+├── pnpm-workspace.yaml
+├── .changeset/                      # versioning + publish manifests
+│   └── config.json
 ├── claude/                          # Claude Code marketplace
 │   ├── .claude-plugin/
 │   │   └── marketplace.json
@@ -48,17 +53,59 @@ have-config/
 │       └── commands/
 │           ├── ship.md              # /have:ship
 │           └── review-cycle.md      # /have:review-cycle
-└── codex/                           # Codex marketplace
-    └── plugins/
-        └── have/                    # the `have` plugin
-            ├── .codex-plugin/
-            │   └── plugin.json
-            └── commands/
-                ├── ship.md          # /have:ship
-                └── review-cycle.md  # /have:review-cycle
+├── codex/                           # Codex marketplace
+│   └── plugins/
+│       └── have/                    # the `have` plugin
+│           ├── .codex-plugin/
+│           │   └── plugin.json
+│           └── commands/
+│               ├── ship.md          # /have:ship
+│               └── review-cycle.md  # /have:review-cycle
+└── packages/                        # published npm configs
+    ├── eslint-config/               # @happyvertical/eslint-config
+    ├── prettier-config/             # @happyvertical/prettier-config
+    └── tsconfig-base/               # @happyvertical/tsconfig-base
 ```
 
-## Install
+## Published packages
+
+The `@happyvertical/*` scope publishes to **GitHub Packages**, not
+npmjs.org (matching the org standard used by smrt, sdk, etc.). To install
+from a consuming repo, you need an `.npmrc` that routes the scope to GH
+Packages and provides auth:
+
+```ini
+# .npmrc in the consuming repo (and/or ~/.npmrc for local dev)
+@happyvertical:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
+```
+
+Set `NODE_AUTH_TOKEN` to:
+- **In CI**: `${{ secrets.GITHUB_TOKEN }}` (or a token from the
+  `HAVE_RELEASE` GitHub App for cross-repo installs)
+- **Locally**: a personal access token with `read:packages` scope
+
+Then install:
+
+```bash
+pnpm add -D \
+  @happyvertical/eslint-config \
+  @happyvertical/prettier-config \
+  @happyvertical/tsconfig-base \
+  eslint prettier typescript
+```
+
+See each package's README for usage details:
+
+| Package | Purpose |
+|---|---|
+| [`@happyvertical/eslint-config`](packages/eslint-config) | Type-aware ESLint flat config with optional Svelte 5 preset |
+| [`@happyvertical/prettier-config`](packages/prettier-config) | Org-wide Prettier rules |
+| [`@happyvertical/tsconfig-base`](packages/tsconfig-base) | Strict TypeScript baselines (app, lib, test variants) |
+
+Configs are versioned via Changesets and published on merge to `main`.
+
+## Plugin install (slash commands)
 
 ```bash
 git clone https://github.com/happyvertical/have-config.git ~/Work/happyvertical/repos/have-config

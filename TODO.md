@@ -26,16 +26,26 @@ that needs it.
 
 ## Lint / format / build bases
 
-- [ ] `biome/biome.json` — when ≥2 repos want identical Biome config
-- [ ] `tsconfig/base.json` — shared tsconfig base
-- [ ] `commitlint/index.js` — shared commitlint config (currently
-      smrt has its own enforced; if other repos adopt, lift here)
-- [ ] `editorconfig` — shared `.editorconfig`
+- [x] `packages/eslint-config/` — ESLint flat config (type-aware) +
+      optional Svelte 5 preset
+- [x] `packages/prettier-config/` — org-wide Prettier rules
+- [x] `packages/tsconfig-base/` — strict TS baseline (app + lib + test
+      variants)
+- [ ] `packages/tsconfig-base/tsconfig.browser.json` — variant with
+      `lib: ["ES2022", "DOM", "DOM.Iterable"]` and
+      `moduleResolution: "Bundler"`, intended for SvelteKit / Vite /
+      other browser projects. Add when there's a second browser
+      consumer (right now anytown is the main one; smrt-svelte will be
+      the second). Currently consumers extend `tsconfig.base.json` and
+      override `lib` in their own tsconfig — see tsconfig-base/README.
+- [ ] `packages/commitlint-config/` — shared commitlint config (currently
+      smrt has its own; lift here if other repos adopt)
+- [ ] `packages/editorconfig/` or `templates/.editorconfig` —
+      shared `.editorconfig` template
 
-Consumption mechanism is TBD per config. Likely either:
-- Publish as npm packages (`@happyvertical/biome-config`, etc.), each
-  repo depends via package.json; or
-- Bootstrap script that copies/symlinks at repo init.
+Consumption mechanism for shared configs: **published as npm packages**
+to GitHub Packages (`npm.pkg.github.com`) under the `@happyvertical`
+scope. Renovate keeps consumers current.
 
 Pick when the first consumer pair exists, not before.
 

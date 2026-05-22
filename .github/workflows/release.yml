@@ -1,0 +1,72 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+# Single in-flight release workflow per ref. Built-ins, not user input.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  packages: write    # publish to GitHub Packages
+  id-token: write    # attestations
+
+jobs:
+  release:
+    name: Release packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Mint a token from the HAVE_RELEASE GitHub App (org-wide secret
+      # pair). Used as GITHUB_TOKEN (for the Version Packages PR) and
+      # NODE_AUTH_TOKEN (for npm publish to npm.pkg.github.com). This
+      # mirrors the smrt/sdk publish pattern — the org standard is GH
+      # Packages, not npmjs.org, so no separate NPM_TOKEN is needed.
+      - name: Generate token from GitHub App
+        id: generate_token
+        uses: tibdex/github-app-token@v2
+        with:
+          app_id: ${{ secrets.HAVE_RELEASE_APP_ID }}
+          private_key: ${{ secrets.HAVE_RELEASE_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          token: ${{ steps.generate_token.outputs.token }}
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@happyvertical'
+
+      - name: Install dependencies
+        env:
+          NODE_AUTH_TOKEN: ${{ steps.generate_token.outputs.token }}
+        run: pnpm install --frozen-lockfile
+
+      # changesets/action either opens a Version Packages PR (when
+      # changesets exist) or publishes (when only version-bumped
+      # package.json files remain). All inputs are workflow-controlled
+      # strings; secrets are by definition safe to reference.
+      - name: Create release PR or publish
+        uses: changesets/action@v1
+        with:
+          publish: pnpm release
+          version: pnpm version-packages
+          commit: "chore(release): version packages"
+          title: "chore(release): version packages"
+        env:
+          GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
+          NODE_AUTH_TOKEN: ${{ steps.generate_token.outputs.token }}
+          NPM_TOKEN: ${{ steps.generate_token.outputs.token }}

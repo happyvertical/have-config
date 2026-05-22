@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "@happyvertical/tsconfig-base/lib",
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    // Publishable library output
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "composite": true,
+    "removeComments": false,
+
+    // Stricter for libraries
+    "noEmitOnError": true
+  }
+}

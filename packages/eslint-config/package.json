@@ -1,0 +1,50 @@
+{
+  "name": "@happyvertical/eslint-config",
+  "version": "0.1.0",
+  "description": "HappyVertical shared ESLint flat config: type-aware TypeScript rules with optional Svelte preset.",
+  "license": "MIT",
+  "homepage": "https://github.com/happyvertical/have-config/tree/main/packages/eslint-config",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/happyvertical/have-config.git",
+    "directory": "packages/eslint-config"
+  },
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./base": "./base.js",
+    "./svelte": "./svelte.js"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  },
+  "files": [
+    "index.js",
+    "base.js",
+    "svelte.js",
+    "README.md"
+  ],
+  "peerDependencies": {
+    "eslint": "^9.0.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@eslint/js": "^9.18.0",
+    "typescript-eslint": "^8.20.0",
+    "eslint-config-prettier": "^9.1.0",
+    "globals": "^15.14.0"
+  },
+  "optionalDependencies": {
+    "eslint-plugin-svelte": "^2.46.0",
+    "svelte-eslint-parser": "^0.43.0"
+  },
+  "keywords": [
+    "eslint",
+    "eslint-config",
+    "eslintconfig",
+    "typescript",
+    "happyvertical",
+    "config"
+  ]
+}
