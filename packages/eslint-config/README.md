@@ -24,7 +24,17 @@ export default [
 
 ### Svelte 5 projects
 
-Install the optional peers:
+`eslint-plugin-svelte` and `svelte-eslint-parser` ship as
+`optionalDependencies` of this package and are installed transitively by
+default. You only need to install `svelte` itself, which is the true
+peer:
+
+```bash
+pnpm add -D svelte
+```
+
+If your install uses `--no-optional` (or pnpm's `optional-dependencies=false`),
+also install the plugin and parser explicitly:
 
 ```bash
 pnpm add -D eslint-plugin-svelte svelte-eslint-parser svelte

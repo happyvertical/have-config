@@ -13,7 +13,7 @@ pnpm add -D @happyvertical/tsconfig-base
 
 Pick the variant that matches what you're building.
 
-### Application (Node service, SvelteKit app, internal tool)
+### Application (Node service, internal tool)
 
 ```jsonc
 // tsconfig.json
@@ -26,6 +26,23 @@ Pick the variant that matches what you're building.
   "include": ["src/**/*"]
 }
 ```
+
+> **Browser / SvelteKit projects**: the base sets `lib: ["ES2022"]` only
+> (no DOM types). For browser apps, add the browser libs in your project
+> tsconfig:
+>
+> ```jsonc
+> {
+>   "extends": "@happyvertical/tsconfig-base/tsconfig.base.json",
+>   "compilerOptions": {
+>     "lib": ["ES2022", "DOM", "DOM.Iterable"],
+>     "moduleResolution": "Bundler"
+>   }
+> }
+> ```
+>
+> A dedicated `tsconfig.browser.json` variant is planned (see `TODO.md`
+> in have-config) once a second browser/SvelteKit consumer emerges.
 
 ### Publishable library (npm package)
 

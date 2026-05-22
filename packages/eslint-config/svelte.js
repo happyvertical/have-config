@@ -1,8 +1,14 @@
 /**
  * @happyvertical/eslint-config/svelte
  *
- * Extends `base` with Svelte 5 support. Requires the optional peer deps
- * (eslint-plugin-svelte, svelte-eslint-parser, svelte) to be installed.
+ * Extends `base` with Svelte 5 support. `eslint-plugin-svelte` and
+ * `svelte-eslint-parser` ship as optionalDependencies of this package
+ * and will be installed transitively under normal `pnpm install`. The
+ * only true peer the consumer must install themselves is `svelte`.
+ *
+ * If your install uses `--no-optional` (or another package manager that
+ * treats optionalDependencies differently), add the plugin + parser as
+ * direct devDependencies.
  *
  * Usage:
  *   import base from '@happyvertical/eslint-config/base';
