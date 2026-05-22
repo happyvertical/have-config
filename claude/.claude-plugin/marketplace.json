@@ -1,0 +1,22 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "have-config",
+  "description": "HappyVertical shared agent configuration: slash commands, MCP servers, hooks, and other cross-repo configuration consumed by ≥2 projects.",
+  "owner": {
+    "name": "Will Griffin",
+    "email": "buddyrandom@gmail.com"
+  },
+  "plugins": [
+    {
+      "name": "have",
+      "description": "HappyVertical agent commands for Claude Code: /have:ship and /have:review-cycle.",
+      "author": {
+        "name": "Will Griffin",
+        "email": "buddyrandom@gmail.com"
+      },
+      "category": "development",
+      "source": "./have",
+      "homepage": "https://github.com/happyvertical/have-config"
+    }
+  ]
+}

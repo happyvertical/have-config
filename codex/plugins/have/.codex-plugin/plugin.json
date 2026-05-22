@@ -1,0 +1,41 @@
+{
+  "name": "have",
+  "version": "0.1.0",
+  "description": "HappyVertical agent commands for Codex. Provides /have:ship (end-to-end shipping pipeline) and /have:review-cycle (multi-tool review loop) for the org's standard pre-PR and PR-creation workflow.",
+  "author": {
+    "name": "Will Griffin",
+    "email": "buddyrandom@gmail.com",
+    "url": "https://github.com/willgriffin"
+  },
+  "homepage": "https://github.com/happyvertical/have-config",
+  "repository": "https://github.com/happyvertical/have-config",
+  "license": "MIT",
+  "keywords": [
+    "codex",
+    "slash-command",
+    "shipping",
+    "review",
+    "ci",
+    "happyvertical",
+    "pr-review"
+  ],
+  "interface": {
+    "displayName": "have — HappyVertical Commands",
+    "shortDescription": "Org-wide review and shipping commands for HappyVertical projects",
+    "longDescription": "Provides /have:review-cycle (multi-tool review loop using codex+claude+copilot) and /have:ship (end-to-end shipping: validate, review, PR, watch CI). Uses pr-review (https://github.com/happyvertical/pr-review) to generate calibrated review prompts. Mirrors the Claude Code version of this plugin.",
+    "developerName": "Will Griffin",
+    "category": "Coding",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/happyvertical/have-config",
+    "defaultPrompt": [
+      "Run /have:review-cycle for repeat reviews and fixes.",
+      "Run /have:ship to validate, review, PR, and watch CI."
+    ],
+    "brandColor": "#0F766E",
+    "screenshots": []
+  }
+}

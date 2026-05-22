@@ -1,0 +1,21 @@
+{
+  "name": "have",
+  "description": "HappyVertical agent commands for Claude Code. Provides /have:ship (end-to-end shipping pipeline) and /have:review-cycle (multi-tool review loop) for the org's standard pre-PR and PR-creation workflow.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Will Griffin",
+    "email": "buddyrandom@gmail.com",
+    "url": "https://github.com/willgriffin"
+  },
+  "homepage": "https://github.com/happyvertical/have-config",
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "slash-command",
+    "shipping",
+    "review",
+    "ci",
+    "happyvertical",
+    "pr-review"
+  ]
+}
