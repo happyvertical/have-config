@@ -225,16 +225,21 @@ Run up to `rounds` review rounds. Default: 3 for code changes, higher
 catches progressively narrower factual edge cases.
 
 **Hard rules for the loop** (these prevent the "stopped too early"
-failure mode):
+*and* "looped too long on trivia" failure modes):
 
 - **Each round runs all reviewers in parallel against the SAME commit**
   — not sequentially against each other's fixes. Sequential cascading
   makes findings depend on which reviewer ran first and obscures
   whether reviewers actually agree on the latest state.
-- **A fix-round is never the final round.** Convergence requires
-  at least one round where every reviewer returns 0 actionable
-  findings against the latest commit. If you just pushed a fix, you
-  MUST run another round before declaring clean.
+- **A fix-round on substantive (P0-P2) findings is never the final
+  round.** If you just pushed a fix for a real bug, you MUST run
+  another round to confirm it didn't introduce a new one.
+- **The loop exits when no P0/P1/P2 findings remain — not when
+  every reviewer returns zero findings.** P3 / nit-level findings
+  (polish, narrow factual edges, cosmetic placement) are recorded as
+  accepted non-blockers in the PR body or filed as follow-up issues.
+  They do NOT extend the loop. Looping on trivia is technical
+  perfectionism that burns reviewer cycles without changing what ships.
 - **Convergence is per-commit, not per-finding.** Reviewer A returning
   clean against commit X doesn't mean clean against commit Y (the
   fix commit). Re-run all reviewers against Y before stopping.
@@ -243,21 +248,21 @@ For each round, process repositories in dependency order:
 
 1. Run validation before review if files changed since the previous validation pass.
 2. Run Codex, Claude, and Copilot reviews for each repository in dependency order.
-3. Merge findings into a single checklist:
-   - `P0/P1`: correctness, data loss, security, broken build, failing tests
-   - `P2`: likely bug, missing test, missing docs for changed behavior
-   - `P3`: maintainability or polish with clear benefit
+3. Merge findings into a single checklist by severity:
+   - `P0/P1`: correctness, data loss, security, broken build, failing tests. **Always block. Always loop.**
+   - `P2`: likely bug, missing test, missing docs for changed behavior. **Block by default; loop unless explicitly accepted with rationale in the PR body.**
+   - `P3`: maintainability or polish with clear benefit; narrow factual edges affecting tiny version windows or rare paths. **Never block. Never extend the loop.** Record in PR body as "accepted non-blockers" with a brief reason, or file as follow-up issues.
 4. Verify each finding against the code. Do not blindly patch speculative review comments.
 5. If `no-fix` was passed, stop after reporting findings.
-6. Address all valid findings in priority order.
+6. Address all valid P0/P1/P2 findings in priority order.
 7. Add or adjust tests for bug fixes and behavior changes.
 8. Rerun relevant validation after edits.
 9. If upstream fixes change the contract consumed downstream, rerun affected downstream validation and review even if that downstream repo had already passed in the current round.
-10. **If a fix was pushed in this round, the next round MUST run** to
-    verify convergence. Do not stop on a fix-round.
-11. Stop the loop as clean only when **a verify round (no edits) returns
-    no actionable findings from any reviewer** in any included repo and
-    validation is green across the graph.
+10. **If a P0/P1/P2 fix was pushed in this round, the next round MUST run** to verify the fix didn't break something. Do not stop on a P0/P1/P2 fix-round.
+11. Stop the loop as clean when **a verify round returns no P0/P1/P2
+    findings from any reviewer** in any included repo and validation
+    is green across the graph. P3/nit findings at exit time get
+    recorded in the PR body, not fixed in this PR.
 
 If the loop hits the round cap:
 
@@ -281,8 +286,11 @@ Return a concise review-cycle report:
 - Worktrees: <paths>
 - Branches: <branches>
 - Validation: <commands run>
-- Reviews: <rounds and tools>
+- Reviews: <rounds and tools; e.g. "3 rounds: codex + copilot + me">
 - Docs: <updated, not needed because..., or findings only>
 - Dependency order: <upstream -> downstream edges or none>
-- Remaining: <none or concrete findings/blockers>
+- Remaining blockers (P0-P2): <none or concrete blockers>
+- Accepted non-blockers (P3/nit): <none, or list with brief rationale —
+  these get folded into the PR body so reviewers see them too>
+- Skipped reviewers: <none, or which + why — never silently drop>
 ```
