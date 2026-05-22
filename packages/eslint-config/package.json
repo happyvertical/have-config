@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/eslint-config",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "HappyVertical shared ESLint flat config: type-aware TypeScript rules with optional Svelte preset.",
   "license": "MIT",
   "homepage": "https://github.com/happyvertical/have-config/tree/main/packages/eslint-config",

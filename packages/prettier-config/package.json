@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/prettier-config",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "HappyVertical shared Prettier configuration.",
   "license": "MIT",
   "homepage": "https://github.com/happyvertical/have-config/tree/main/packages/prettier-config",
