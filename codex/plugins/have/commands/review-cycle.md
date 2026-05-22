@@ -235,12 +235,14 @@ required by default). Never silently drop. Never report `clean`
 with a skipped required reviewer — `/ship` gates on `Status: clean`,
 and a soft skip would let unreviewed code merge.
 
-If Copilot CLI is the unavailable one specifically, open the PR as
-a **draft** so the Copilot bot can review before the PR enters merge
-candidacy; fix any bot findings, then mark ready for review. This
-substitutes a post-push reviewer (bot) for the unavailable pre-push
-one (CLI) at the cost of one round-trip — better than no Copilot
-coverage at all.
+If Copilot CLI is the unavailable one specifically, record this in
+the final report's `Skipped reviewers` field with reason. Downstream
+(`/ship`, or the human invoking review-cycle directly) reads the
+report and decides whether to open the PR as a **draft** so the
+Copilot bot can review before merge candidacy. `/review-cycle`
+itself never opens or pushes PRs — that's `/ship`'s job — so this
+fallback is something the report enables, not something review-cycle
+executes.
 
 ### For all three
 
@@ -276,14 +278,18 @@ catches progressively narrower factual edge cases.
 - **The loop exits when no P0/P1/P2 findings remain — not when
   every reviewer returns zero findings.** P3 / nit-level findings
   (polish, narrow factual edges, cosmetic placement) get triaged
-  three ways (fix inline if cheap, record in PR body if worth
-  tracking, file as follow-up if bigger) but never extend the
+  three ways (fix inline if cheap, record in the final report if
+  worth tracking, file as follow-up if bigger) but never extend the
   loop. Running another full ensemble round just to verify a
   one-line wording tweak is technical perfectionism that burns
   reviewer cycles without changing what ships.
-- **Convergence is per-commit, not per-finding.** Reviewer A returning
-  clean against commit X doesn't mean clean against commit Y (the
-  fix commit). Re-run all reviewers against Y before stopping.
+- **Convergence is per-commit for behaviour-changing fixes** (P0/P1/P2
+  and any non-fix code changes). Reviewer A returning clean against
+  commit X doesn't mean clean against commit Y when Y changes
+  behaviour — re-run all reviewers. **P3-only commits do not reset
+  convergence**: if the only change since the last clean verify
+  round is a P3 wording tweak, you don't need another full ensemble
+  pass.
 
 For each round, process repositories in dependency order:
 
@@ -291,14 +297,14 @@ For each round, process repositories in dependency order:
 2. Run Codex, Claude, and Copilot reviews for each repository in dependency order.
 3. Merge findings into a single checklist by severity:
    - `P0/P1`: correctness, data loss, security, broken build, failing tests. **Always block. Always loop.**
-   - `P2`: likely bug, missing test, missing docs for changed behavior. **Block by default; loop unless explicitly accepted with rationale in the PR body.**
+   - `P2`: likely bug, missing test, missing docs for changed behavior. **Block by default; loop unless explicitly accepted with rationale in the final report (which `/ship` then copies into the PR body when creating the PR).**
    - `P3`: maintainability or polish with clear benefit; narrow factual edges affecting tiny version windows or rare paths. **Never block. Never extend the loop just to verify a P3 fix.** For each P3 finding, pick one based on cost vs. value:
      - **Cheap to fix → fix inline in the same commit/PR.** No verify round needed; group with other fixes if any. (Most P3 wording/clarity tweaks fall here.)
-     - **Worth tracking but not blocking → record in PR body** as accepted non-blocker with brief rationale, so reviewers see the deliberate choice.
-     - **Bigger than this PR's scope → file as follow-up issue** with a link from the PR body.
+     - **Worth tracking but not blocking → record in the final report** as accepted non-blocker with brief rationale. If a PR already exists, also copy into the PR body; otherwise `/ship` propagates the report into the PR body at PR creation time.
+     - **Bigger than this PR's scope → file as follow-up issue**, link from the final report (and PR body, when one exists).
 4. Verify each finding against the code. Do not blindly patch speculative review comments.
 5. If `no-fix` was passed, stop after reporting findings.
-6. Address all valid P0/P1 findings (mandatory) and all valid P2 findings (mandatory unless explicitly accepted in the PR body with a one-line rationale) in priority order.
+6. Address all valid P0/P1 findings (mandatory) and all valid P2 findings (mandatory unless explicitly accepted in the final report with a one-line rationale) in priority order.
 7. Add or adjust tests for bug fixes and behavior changes.
 8. Rerun relevant validation after edits.
 9. If upstream fixes change the contract consumed downstream, rerun affected downstream validation and review even if that downstream repo had already passed in the current round.
@@ -306,7 +312,9 @@ For each round, process repositories in dependency order:
 11. Stop the loop as clean when **a verify round returns no P0/P1/P2
     findings from any reviewer** in any included repo and validation
     is green across the graph. P3/nit findings at exit time get
-    recorded in the PR body, not fixed in this PR.
+    recorded in the final report, not fixed in this PR (consumers
+    like `/ship` are responsible for surfacing them in the PR body
+    when the PR exists).
 
 If the loop hits the round cap:
 
@@ -326,9 +334,11 @@ Return a concise review-cycle report:
 ```text
 ## Review Cycle Result
 - Status: clean | partial | blocked | findings-only
-  (clean = no P0/P1 + all P2 fixed-or-accepted + ALL required reviewers ran;
-   partial = same but at least one required reviewer was skipped;
-   blocked = unaccepted P0/P1/P2 remaining or cap hit with findings open;
+  (clean = no P0/P1 + all P2 fixed-or-accepted + ALL required reviewers ran
+            + validation green;
+   partial = otherwise-clean but at least one required reviewer was skipped;
+   blocked = unaccepted P0/P1/P2 remaining, cap hit with findings open,
+            or validation failed;
    findings-only = `no-fix` was passed)
 - Repos: <ordered repo list with upstream/downstream roles>
 - Worktrees: <paths>
@@ -338,9 +348,11 @@ Return a concise review-cycle report:
 - Docs: <updated, not needed because..., or findings only>
 - Dependency order: <upstream -> downstream edges or none>
 - Remaining blockers (P0/P1, or unaccepted P2): <none or concrete blockers>
-- Accepted P2 (with rationale): <none, or list with rationale — these
-  must also appear in the PR body so reviewers see the deliberate choice>
+- Accepted P2 (with rationale): <none, or list with rationale — this is
+  the canonical record; `/ship` (or the human creating the PR) copies
+  these into the PR body so human reviewers see the deliberate choice>
 - Accepted non-blockers (P3/nit): <none, or list with brief rationale —
-  also folded into the PR body>
-- Skipped reviewers: <none, or which + why — never silently drop>
+  also surfaced into the PR body by `/ship` at PR creation time>
+- Skipped reviewers: <none, or which + why — never silently drop;
+  any skipped required reviewer forces Status to `partial`>
 ```
