@@ -1,0 +1,28 @@
+{
+  "name": "@happyvertical/tsconfig-base",
+  "version": "0.1.0",
+  "description": "HappyVertical shared TypeScript base configurations: strict, type-aware, ESM-first.",
+  "license": "MIT",
+  "homepage": "https://github.com/happyvertical/have-config/tree/main/packages/tsconfig-base",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/happyvertical/have-config.git",
+    "directory": "packages/tsconfig-base"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "files": [
+    "tsconfig.base.json",
+    "tsconfig.lib.json",
+    "tsconfig.test.json",
+    "README.md"
+  ],
+  "keywords": [
+    "tsconfig",
+    "typescript",
+    "happyvertical",
+    "config"
+  ]
+}
