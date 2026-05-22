@@ -175,18 +175,35 @@ the working tree mid-round, breaking the same-commit guarantee the
 loop relies on.
 
 `--allow-all-tools` is *not* read-only — it grants write/edit
-capability. Don't use it for review. Use an explicit allowlist of
-read-only tools instead. Check the current tool names with
-`gh copilot -- --help` (the CLI is preview-stage and tool names
-shift); minimum needed for a review is the shell (`git log`,
-`git diff`, `git show`, `rg`, `cat`) and file-reading. Example shape
-(verify against your CLI version):
+capability and would let the model mutate the working tree mid-review.
+Don't use it. But `--available-tools shell,read` alone *also doesn't
+work* in non-interactive mode — it only filters which tools the model
+can *see*, not which it can run without approval. In `-p` mode there's
+no place to ask for permission, so tool calls get denied with
+`Permission denied and could not request permission from user`. The
+review then runs with no repository context.
+
+The correct shape is **explicit per-command `--allow-tool` flags** for
+the specific read-only commands a review needs. Verify against
+`gh copilot -- --help` and `gh copilot -- help permissions` for the
+syntax your CLI version supports; example for current Copilot CLI:
 
 ```bash
 gh copilot -- -p "$(pr-review --base <base> --pretty)" \
-  --available-tools shell,read \
+  --allow-tool 'shell(git diff)' \
+  --allow-tool 'shell(git log)' \
+  --allow-tool 'shell(git show)' \
+  --allow-tool 'shell(git status)' \
+  --allow-tool 'shell(rg)' \
+  --allow-tool 'shell(cat)' \
+  --allow-tool 'shell(head)' \
   --effort xhigh
 ```
+
+Add `--deny-tool` for anything dangerous you want hard-blocked even if
+the model later requests it. The pattern enforces read-only at the
+permission layer; the prompt's "don't modify files" instruction is
+defense-in-depth.
 
 - Use `--pretty` so Copilot receives the prompt as readable markdown
   rather than the JSON-instruction format.
@@ -211,11 +228,19 @@ gh copilot -- -p "$(pr-review --base <base> --pretty)" \
   or run review-cycle from a terminal / CI / codex session instead.
 
 **When a reviewer is unavailable**: proceed with the others *and*
-record in the final report which reviewer was skipped and why. Do
-not silently drop a reviewer — that's how operational drift hides.
-If Copilot CLI is the unavailable one, consider opening the PR as a
-**draft** so the Copilot bot reviews before merge candidates form;
-fix any bot findings before marking ready for review.
+record in the final report which reviewer was skipped and why.
+**Status MUST drop to `partial` when any required reviewer is
+skipped** (codex, copilot CLI, and claude-subprocess are all
+required by default). Never silently drop. Never report `clean`
+with a skipped required reviewer — `/ship` gates on `Status: clean`,
+and a soft skip would let unreviewed code merge.
+
+If Copilot CLI is the unavailable one specifically, open the PR as
+a **draft** so the Copilot bot can review before the PR enters merge
+candidacy; fix any bot findings, then mark ready for review. This
+substitutes a post-push reviewer (bot) for the unavailable pre-push
+one (CLI) at the cost of one round-trip — better than no Copilot
+coverage at all.
 
 ### For all three
 
@@ -301,6 +326,10 @@ Return a concise review-cycle report:
 ```text
 ## Review Cycle Result
 - Status: clean | partial | blocked | findings-only
+  (clean = no P0/P1 + all P2 fixed-or-accepted + ALL required reviewers ran;
+   partial = same but at least one required reviewer was skipped;
+   blocked = unaccepted P0/P1/P2 remaining or cap hit with findings open;
+   findings-only = `no-fix` was passed)
 - Repos: <ordered repo list with upstream/downstream roles>
 - Worktrees: <paths>
 - Branches: <branches>
