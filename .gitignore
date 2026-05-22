@@ -4,9 +4,10 @@
 node_modules/
 
 # Copilot CLI session transcripts can leak into the working dir if
-# probe prompts reference filenames (see README — review outputs
-# should go to /tmp, not the repo). Narrow patterns instead of `*.jsonl`
-# so we don't accidentally ignore legitimate fixtures or test data.
-*-test.jsonl
+# probe prompts reference filenames. Narrow to the specific transcript
+# prefix copilot uses; don't ignore generic `*-test.jsonl` patterns
+# that could match legitimate fixtures (e.g. `fixtures/payment-test.jsonl`).
+# The real rule lives in the review-cycle docs: review outputs go to
+# /tmp, not the repo.
 .copilot-session-*.jsonl
 copilot-session-*.jsonl

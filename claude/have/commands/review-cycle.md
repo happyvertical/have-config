@@ -193,8 +193,11 @@ the specific read-only commands a review needs. Verify against
 syntax your CLI version supports; example for current Copilot CLI:
 
 ```bash
+REPO_ROOT="$(git rev-parse --show-toplevel)"
 gh copilot -- -p "$(pr-review --base <base> --pretty)" \
-  --add-dir "$(git rev-parse --show-toplevel)" \
+  -C "$REPO_ROOT" \
+  --add-dir "$REPO_ROOT" \
+  --disallow-temp-dir \
   --allow-tool 'shell(git diff)' \
   --allow-tool 'shell(git log)' \
   --allow-tool 'shell(git show)' \
@@ -206,14 +209,22 @@ gh copilot -- -p "$(pr-review --base <base> --pretty)" \
   --effort xhigh
 ```
 
-**Why `--add-dir` and not just shell allows:** the shell allowlist
-permits the *command*, not the path. `cat`, `head`, `rg` are not
-repo-scoped — a prompt-injected commit subject or diff hunk could
-instruct the reviewer to read `$HOME/.aws/credentials` or similar
-and quote it into findings. `--add-dir <repo-root>` confines the
-file-access surface to the repository. Combined with the per-command
-allowlist, the review surface is "git read-only commands + repo-bounded
-shell utilities" — no exfiltration path even under prompt injection.
+**Why the path-scoping is a three-part lock**, not just `--add-dir`:
+
+- `-C "$REPO_ROOT"` sets the working directory explicitly. Without
+  this, the CLI's default "current dir" is whatever shell invoked
+  it, which may not be the repo root.
+- `--add-dir "$REPO_ROOT"` adds the repo to the allowed-dirs list.
+- `--disallow-temp-dir` removes the system temp dir from the default
+  allowlist. Without this flag, Copilot can still read `/tmp` and
+  similar even when `--add-dir` is set, because `--add-dir` *adds*
+  rather than *replaces* the default path set.
+
+Combined with the per-command allowlist, the review surface is
+"git read-only commands + repo-bounded shell utilities, no
+$HOME/$TMPDIR access" — no exfiltration path even if a prompt-
+injected commit subject or diff hunk asks Copilot to read
+`$HOME/.aws/credentials` or `/tmp/secrets`.
 
 Add `--deny-tool` for anything dangerous you want hard-blocked even if
 the model later requests it. The pattern enforces read-only at the
