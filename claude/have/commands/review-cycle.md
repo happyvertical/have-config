@@ -165,15 +165,47 @@ pr-review --base <base> | claude -p --permission-mode plan
 
 ### Run Copilot review
 
-Copilot also expects the prompt to carry its own context:
+**This step is non-optional for the "catch before push" intent.** The
+Copilot PR review *bot* only fires after a PR is opened — too late to
+prevent the round-trip the review-cycle exists to compress. The Copilot
+*CLI* runs locally pre-push and gives you Copilot's blind-spot
+coverage before the bot has a chance to comment.
+
+Copilot CLI expects the prompt to carry its own context:
 
 ```bash
-gh copilot -p "$(pr-review --base <base> --pretty)" --allow-tool 'shell(git)' --allow-tool 'shell(rg)'
+gh copilot -- -p "$(pr-review --base <base> --pretty)" --allow-all-tools --effort xhigh
 ```
 
-- Use `--pretty` so Copilot receives the prompt as readable markdown rather than the JSON-instruction format.
-- If the `gh copilot` syntax has changed, run `gh copilot -- --help` and adapt to the installed CLI.
-- Keep the Copilot run read-only. It may inspect git diff and repository files, but it must not make edits during review.
+- Use `--pretty` so Copilot receives the prompt as readable markdown
+  rather than the JSON-instruction format.
+- Pass `--` after `gh copilot` to forward flags to the underlying
+  `copilot` binary; otherwise `gh` may interpret them.
+- `--effort xhigh` matches codex's reasoning depth; tune down if the
+  diff is small and you want faster runs.
+- If the `gh copilot` syntax has changed, run `gh copilot -- --help`
+  and adapt to the installed CLI.
+- Keep the Copilot run read-only — `--allow-all-tools` permits
+  exploration but the prompt itself instructs not to modify files.
+
+**Known blockers and fallbacks** (real failures we've seen):
+
+- **`Access denied by policy settings`** — the org's Copilot policy
+  is disabling CLI use. Fix at https://github.com/settings/copilot
+  (personal) and/or your org's Copilot policies page (admin). Until
+  enabled, Copilot CLI cannot run pre-push.
+- **`Failed to authenticate. API Error: 401`** on `claude -p` — happens
+  when this command is invoked from inside an active Claude Code
+  session; OAuth credentials don't propagate to spawned children.
+  Workaround: set `ANTHROPIC_API_KEY` env var on the child invocation,
+  or run review-cycle from a terminal / CI / codex session instead.
+
+**When a reviewer is unavailable**: proceed with the others *and*
+record in the final report which reviewer was skipped and why. Do
+not silently drop a reviewer — that's how operational drift hides.
+If Copilot CLI is the unavailable one, consider opening the PR as a
+**draft** so the Copilot bot reviews before merge candidates form;
+fix any bot findings before marking ready for review.
 
 ### For all three
 
