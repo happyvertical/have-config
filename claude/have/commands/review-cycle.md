@@ -240,10 +240,12 @@ catches progressively narrower factual edge cases.
   another round to confirm it didn't introduce a new one.
 - **The loop exits when no P0/P1/P2 findings remain — not when
   every reviewer returns zero findings.** P3 / nit-level findings
-  (polish, narrow factual edges, cosmetic placement) are recorded as
-  accepted non-blockers in the PR body or filed as follow-up issues.
-  They do NOT extend the loop. Looping on trivia is technical
-  perfectionism that burns reviewer cycles without changing what ships.
+  (polish, narrow factual edges, cosmetic placement) get triaged
+  three ways (fix inline if cheap, record in PR body if worth
+  tracking, file as follow-up if bigger) but never extend the
+  loop. Running another full ensemble round just to verify a
+  one-line wording tweak is technical perfectionism that burns
+  reviewer cycles without changing what ships.
 - **Convergence is per-commit, not per-finding.** Reviewer A returning
   clean against commit X doesn't mean clean against commit Y (the
   fix commit). Re-run all reviewers against Y before stopping.
@@ -255,7 +257,10 @@ For each round, process repositories in dependency order:
 3. Merge findings into a single checklist by severity:
    - `P0/P1`: correctness, data loss, security, broken build, failing tests. **Always block. Always loop.**
    - `P2`: likely bug, missing test, missing docs for changed behavior. **Block by default; loop unless explicitly accepted with rationale in the PR body.**
-   - `P3`: maintainability or polish with clear benefit; narrow factual edges affecting tiny version windows or rare paths. **Never block. Never extend the loop.** Record in PR body as "accepted non-blockers" with a brief reason, or file as follow-up issues.
+   - `P3`: maintainability or polish with clear benefit; narrow factual edges affecting tiny version windows or rare paths. **Never block. Never extend the loop just to verify a P3 fix.** For each P3 finding, pick one based on cost vs. value:
+     - **Cheap to fix → fix inline in the same commit/PR.** No verify round needed; group with other fixes if any. (Most P3 wording/clarity tweaks fall here.)
+     - **Worth tracking but not blocking → record in PR body** as accepted non-blocker with brief rationale, so reviewers see the deliberate choice.
+     - **Bigger than this PR's scope → file as follow-up issue** with a link from the PR body.
 4. Verify each finding against the code. Do not blindly patch speculative review comments.
 5. If `no-fix` was passed, stop after reporting findings.
 6. Address all valid P0/P1/P2 findings in priority order.
