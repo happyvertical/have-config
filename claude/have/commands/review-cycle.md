@@ -171,10 +171,25 @@ prevent the round-trip the review-cycle exists to compress. The Copilot
 *CLI* runs locally pre-push and gives you Copilot's blind-spot
 coverage before the bot has a chance to comment.
 
-Copilot CLI expects the prompt to carry its own context:
+Copilot CLI expects the prompt to carry its own context. **The
+invocation must enforce read-only at the permission layer — prompt
+instructions are advisory, tool permissions are enforcement.** If
+Copilot can use write/edit-capable tools, a "review" pass can mutate
+the working tree mid-round, breaking the same-commit guarantee the
+loop relies on.
+
+`--allow-all-tools` is *not* read-only — it grants write/edit
+capability. Don't use it for review. Use an explicit allowlist of
+read-only tools instead. Check the current tool names with
+`gh copilot -- --help` (the CLI is preview-stage and tool names
+shift); minimum needed for a review is the shell (`git log`,
+`git diff`, `git show`, `rg`, `cat`) and file-reading. Example shape
+(verify against your CLI version):
 
 ```bash
-gh copilot -- -p "$(pr-review --base <base> --pretty)" --allow-all-tools --effort xhigh
+gh copilot -- -p "$(pr-review --base <base> --pretty)" \
+  --available-tools shell,read \
+  --effort xhigh
 ```
 
 - Use `--pretty` so Copilot receives the prompt as readable markdown
@@ -183,10 +198,9 @@ gh copilot -- -p "$(pr-review --base <base> --pretty)" --allow-all-tools --effor
   `copilot` binary; otherwise `gh` may interpret them.
 - `--effort xhigh` matches codex's reasoning depth; tune down if the
   diff is small and you want faster runs.
-- If the `gh copilot` syntax has changed, run `gh copilot -- --help`
-  and adapt to the installed CLI.
-- Keep the Copilot run read-only — `--allow-all-tools` permits
-  exploration but the prompt itself instructs not to modify files.
+- The prompt itself also instructs not to modify files. That's
+  defense-in-depth, not the primary enforcement — the permission
+  flags do the actual blocking.
 
 **Known blockers and fallbacks** (real failures we've seen):
 
@@ -263,7 +277,7 @@ For each round, process repositories in dependency order:
      - **Bigger than this PR's scope → file as follow-up issue** with a link from the PR body.
 4. Verify each finding against the code. Do not blindly patch speculative review comments.
 5. If `no-fix` was passed, stop after reporting findings.
-6. Address all valid P0/P1/P2 findings in priority order.
+6. Address all valid P0/P1 findings (mandatory) and all valid P2 findings (mandatory unless explicitly accepted in the PR body with a one-line rationale) in priority order.
 7. Add or adjust tests for bug fixes and behavior changes.
 8. Rerun relevant validation after edits.
 9. If upstream fixes change the contract consumed downstream, rerun affected downstream validation and review even if that downstream repo had already passed in the current round.
@@ -298,8 +312,10 @@ Return a concise review-cycle report:
 - Reviews: <rounds and tools; e.g. "3 rounds: codex + copilot + me">
 - Docs: <updated, not needed because..., or findings only>
 - Dependency order: <upstream -> downstream edges or none>
-- Remaining blockers (P0-P2): <none or concrete blockers>
+- Remaining blockers (P0/P1, or unaccepted P2): <none or concrete blockers>
+- Accepted P2 (with rationale): <none, or list with rationale — these
+  must also appear in the PR body so reviewers see the deliberate choice>
 - Accepted non-blockers (P3/nit): <none, or list with brief rationale —
-  these get folded into the PR body so reviewers see them too>
+  also folded into the PR body>
 - Skipped reviewers: <none, or which + why — never silently drop>
 ```
