@@ -175,25 +175,30 @@ Then branch on the gate result:
   `Skipped reviewers` or `Accepted P2`:
   - **Partial because Copilot CLI was skipped** (org policy block,
     network failure, missing auth, etc.): open the PR as a **draft**
-    so the Copilot bot can review post-push before merge candidacy.
-    Address bot findings, rerun `/review-cycle`, then `gh pr ready`
-    when the cycle returns clean.
+    so the Copilot bot can review post-push. Address bot findings,
+    then rerun `/review-cycle`. The rerun will *still* return
+    `partial` (the CLI block is the same), so it can't be the
+    clearance signal. Instead: when the Copilot bot has reviewed
+    the current commit with no unaddressed findings AND a human
+    explicitly accepts the bot-for-CLI substitution (typically by
+    running `gh pr ready`), that's the clearance path. Document
+    the substitution in the PR body so the audit trail is clear.
   - **Partial because a different required reviewer was skipped**
     (codex unavailable, claude-subprocess auth fails): open as
     draft and call out the skip in the PR body so a human can
     decide whether the remaining reviewer coverage is sufficient.
     Don't mark ready until the skipped reviewer can run or a human
-    explicitly accepts the gap.
-  - **Partial with only accepted P2 / accepted non-blockers**:
-    continue, but copy the `Accepted P2` and `Accepted non-blockers`
-    fields from the report into the PR body so human reviewers see
-    the deliberate choices.
+    explicitly accepts the gap with rationale in the PR body.
 - If it returns `blocked`, stop before opening ready PRs. Open draft PRs only when the user passed `draft` or a draft would help expose the blocker.
 - If `/review-cycle` changed files, rerun the relevant validation and documentation checks before committing.
 
 ## Commit And PR
 
-When validation and `/review-cycle` are clean, commit and open PRs in dependency order:
+When the Review Cycle Gate above has been satisfied (either `clean`,
+or `partial` with an explicit fallback path documented above),
+commit and open PRs in dependency order. Draft vs ready follows the
+gate's branch — draft on partial, ready on clean (unless the user
+passed `draft`):
 
 1. Recheck `git status --porcelain` in each included repository.
 2. Ensure every branch name is suitable. If needed, create a `codex/ship-<short-topic>` branch per repository.

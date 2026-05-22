@@ -190,6 +190,7 @@ syntax your CLI version supports; example for current Copilot CLI:
 
 ```bash
 gh copilot -- -p "$(pr-review --base <base> --pretty)" \
+  --add-dir "$(git rev-parse --show-toplevel)" \
   --allow-tool 'shell(git diff)' \
   --allow-tool 'shell(git log)' \
   --allow-tool 'shell(git show)' \
@@ -201,10 +202,19 @@ gh copilot -- -p "$(pr-review --base <base> --pretty)" \
   --effort xhigh
 ```
 
+**Why `--add-dir` and not just shell allows:** the shell allowlist
+permits the *command*, not the path. `cat`, `head`, `rg` are not
+repo-scoped — a prompt-injected commit subject or diff hunk could
+instruct the reviewer to read `$HOME/.aws/credentials` or similar
+and quote it into findings. `--add-dir <repo-root>` confines the
+file-access surface to the repository. Combined with the per-command
+allowlist, the review surface is "git read-only commands + repo-bounded
+shell utilities" — no exfiltration path even under prompt injection.
+
 Add `--deny-tool` for anything dangerous you want hard-blocked even if
 the model later requests it. The pattern enforces read-only at the
-permission layer; the prompt's "don't modify files" instruction is
-defense-in-depth.
+permission layer with repo-scoped file access; the prompt's "don't
+modify files" instruction is defense-in-depth.
 
 - Use `--pretty` so Copilot receives the prompt as readable markdown
   rather than the JSON-instruction format.
