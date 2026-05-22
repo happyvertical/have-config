@@ -175,7 +175,7 @@ Then branch on the gate result:
 - If `/review-cycle` returns `clean`, continue to commit and PR.
 - If it returns `partial`, branch on the reason recorded in
   `Skipped reviewers` or `Accepted P2`:
-  - **Partial because Copilot CLI was skipped** (org policy block,
+  - **Partial because copilot-cli was skipped** (org policy block,
     network failure, missing auth, etc.): open the PR as a **draft**
     so the Copilot bot can review post-push. Address bot findings,
     then rerun `/review-cycle`. The rerun will *still* return
@@ -186,7 +186,7 @@ Then branch on the gate result:
     running `gh pr ready`), that's the clearance path. Document
     the substitution in the PR body so the audit trail is clear.
   - **Partial because a different required reviewer was skipped**
-    (codex unavailable, claude-subprocess auth fails): open as
+    (codex-cli unavailable, claude-cli subprocess auth fails): open as
     draft and call out the skip in the PR body so a human can
     decide whether the remaining reviewer coverage is sufficient.
     Don't mark ready until the skipped reviewer can run or a human
