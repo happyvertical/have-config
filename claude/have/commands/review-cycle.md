@@ -198,6 +198,7 @@ gh copilot -- -p "$(pr-review --base <base> --pretty)" \
   --allow-tool 'shell(git log)' \
   --allow-tool 'shell(git show)' \
   --allow-tool 'shell(git status)' \
+  --allow-tool 'shell(git rev-parse)' \
   --allow-tool 'shell(rg)' \
   --allow-tool 'shell(cat)' \
   --allow-tool 'shell(head)' \

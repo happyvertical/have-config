@@ -156,6 +156,20 @@ Use the same `rounds=`, `base=`, and `repos=` arguments passed to `/ship`. For m
 
 Treat `/review-cycle` as the blocker gate:
 
+**Regardless of the gate's result**, always copy these fields from
+`/review-cycle`'s final report into the PR body when creating or
+updating the PR:
+- `Accepted P2 (with rationale)` — accepted P2 happens on the `clean`
+  branch under the current status contract (all P2 fixed-or-accepted
+  → clean), so this propagation is not gated by `partial`
+- `Accepted non-blockers (P3/nit)` — same reasoning
+- `Skipped reviewers` (if any)
+
+These fields are how human reviewers see the deliberate choices the
+ensemble made. Dropping them defeats the audit trail.
+
+Then branch on the gate result:
+
 - If `/review-cycle` returns `clean`, continue to commit and PR.
 - If it returns `partial`, branch on the reason recorded in
   `Skipped reviewers` or `Accepted P2`:

@@ -2,3 +2,6 @@
 *.swp
 *.swo
 node_modules/
+
+# Copilot CLI session transcripts that can leak into the working dir
+*.jsonl
