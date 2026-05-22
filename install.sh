@@ -86,8 +86,26 @@ fi
 # 3. Codex marketplace
 cyan "→ Step 3/4: Codex marketplace + have plugin"
 if command -v codex >/dev/null 2>&1; then
-  # Codex marketplace add registers AND auto-discovers plugins
+  # Codex marketplace add registers the marketplace; plugin enablement is
+  # config-driven (codex has no `plugin install/enable` CLI). We add the
+  # enabled=true entry to ~/.codex/config.toml directly.
   codex plugin marketplace add "$REPO_ROOT/codex" 2>&1 | head -3 || true
+
+  # Idempotently enable have@have-config
+  python3 - <<'PY' || red "  Could not auto-enable plugin in ~/.codex/config.toml; add this manually:
+  [plugins.\"have@have-config\"]
+  enabled = true"
+import os
+path = os.path.expanduser("~/.codex/config.toml")
+content = open(path).read() if os.path.exists(path) else ""
+if 'plugins."have@have-config"' in content:
+    print("  have@have-config already enabled in codex config.")
+else:
+    with open(path, "a") as f:
+        f.write('\n[plugins."have@have-config"]\nenabled = true\n')
+    print("  Enabled have@have-config in ~/.codex/config.toml.")
+PY
+
   green "  Codex: /have:ship and /have:review-cycle ready (after restart)."
 else
   red "  codex CLI not found; skipping Codex install."
