@@ -220,7 +220,24 @@ pr-review --base <base> | claude -p --permission-mode plan | pr-review-capture |
 
 ## Review/Fix Loop
 
-Run up to `rounds` review rounds. Default: 3.
+Run up to `rounds` review rounds. Default: 3 for code changes, higher
+(5-10) for documentation / reviewer-checklist content where each round
+catches progressively narrower factual edge cases.
+
+**Hard rules for the loop** (these prevent the "stopped too early"
+failure mode):
+
+- **Each round runs all reviewers in parallel against the SAME commit**
+  — not sequentially against each other's fixes. Sequential cascading
+  makes findings depend on which reviewer ran first and obscures
+  whether reviewers actually agree on the latest state.
+- **A fix-round is never the final round.** Convergence requires
+  at least one round where every reviewer returns 0 actionable
+  findings against the latest commit. If you just pushed a fix, you
+  MUST run another round before declaring clean.
+- **Convergence is per-commit, not per-finding.** Reviewer A returning
+  clean against commit X doesn't mean clean against commit Y (the
+  fix commit). Re-run all reviewers against Y before stopping.
 
 For each round, process repositories in dependency order:
 
@@ -236,12 +253,21 @@ For each round, process repositories in dependency order:
 7. Add or adjust tests for bug fixes and behavior changes.
 8. Rerun relevant validation after edits.
 9. If upstream fixes change the contract consumed downstream, rerun affected downstream validation and review even if that downstream repo had already passed in the current round.
-10. If no actionable findings remain in any included repo and validation is green across the graph, stop the loop as clean.
+10. **If a fix was pushed in this round, the next round MUST run** to
+    verify convergence. Do not stop on a fix-round.
+11. Stop the loop as clean only when **a verify round (no edits) returns
+    no actionable findings from any reviewer** in any included repo and
+    validation is green across the graph.
 
 If the loop hits the round cap:
 
 - stop and summarize unresolved findings
 - distinguish true blockers from false positives and accepted non-blockers
+- if findings are still surfacing at the cap, that's a signal — either
+  the spec is over-detailed (consider simplifying), the reviewer set
+  is producing diminishing returns (acceptable to ship with a recorded
+  follow-up), or there's a genuine gap (don't ship; raise the cap or
+  reassess)
 - do not push or open PRs from this command unless the user explicitly asks
 
 ## Final Report
