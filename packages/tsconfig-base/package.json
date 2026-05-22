@@ -10,8 +10,8 @@
     "directory": "packages/tsconfig-base"
   },
   "publishConfig": {
-    "access": "public",
-    "provenance": true
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
   },
   "files": [
     "tsconfig.base.json",

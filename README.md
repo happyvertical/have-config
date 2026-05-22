@@ -69,7 +69,23 @@ have-config/
 
 ## Published packages
 
-Install the configs you need:
+The `@happyvertical/*` scope publishes to **GitHub Packages**, not
+npmjs.org (matching the org standard used by smrt, sdk, etc.). To install
+from a consuming repo, you need an `.npmrc` that routes the scope to GH
+Packages and provides auth:
+
+```ini
+# .npmrc in the consuming repo (and/or ~/.npmrc for local dev)
+@happyvertical:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
+```
+
+Set `NODE_AUTH_TOKEN` to:
+- **In CI**: `${{ secrets.GITHUB_TOKEN }}` (or a token from the
+  `HAVE_RELEASE` GitHub App for cross-repo installs)
+- **Locally**: a personal access token with `read:packages` scope
+
+Then install:
 
 ```bash
 pnpm add -D \

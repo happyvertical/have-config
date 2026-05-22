@@ -16,8 +16,8 @@
     "./svelte": "./svelte.js"
   },
   "publishConfig": {
-    "access": "public",
-    "provenance": true
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
   },
   "files": [
     "index.js",
