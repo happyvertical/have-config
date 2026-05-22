@@ -10,10 +10,12 @@
   },
   "scripts": {
     "changeset": "changeset",
-    "version-packages": "changeset version",
-    "release": "changeset publish"
+    "changeset:auto": "tsx scripts/auto-changeset.ts",
+    "changeset:version": "changeset version",
+    "changeset:publish": "changeset publish"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.29.0"
+    "@changesets/cli": "^2.29.0",
+    "tsx": "^4.20.0"
   }
 }
