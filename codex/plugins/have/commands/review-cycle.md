@@ -301,9 +301,12 @@ pr-review --base <base> | claude -p --permission-mode plan | pr-review-capture |
 
 ## Review/Fix Loop
 
-Run up to `rounds` review rounds. Default: 3 for code changes, higher
-(5-10) for documentation / reviewer-checklist content where each round
-catches progressively narrower factual edge cases.
+Run up to `rounds` review rounds. The argument default is `3`
+regardless of change type (set at the `rounds=N` arg above). For
+documentation / reviewer-checklist content, consider passing
+`rounds=5..10` because each round catches progressively narrower
+factual edge cases — there's no auto-detection that bumps the cap
+for doc work.
 
 **Hard rules for the loop** (these prevent the "stopped too early"
 *and* "looped too long on trivia" failure modes):
@@ -396,6 +399,15 @@ If the loop hits the round cap:
   is producing diminishing returns (acceptable to ship with a recorded
   follow-up), or there's a genuine gap (don't ship; raise the cap or
   reassess)
+- **special case: a P0/P1/P2 fix landed in the final permitted round**
+  — Rule 10 requires the next round MUST run to verify, but the cap
+  forbids it. Report status as `partial` (not `clean` and not
+  `blocked`): the fix may be correct but no verify round confirmed
+  it. Note in the final report that the verify round was blocked by
+  the cap and recommend re-running with `rounds=N+1` (or higher) so
+  the verify round can complete. Don't report `clean` just because
+  the post-fix tree has no surfaced findings — those findings were
+  never sought.
 - do not push or open PRs from this command unless the user explicitly asks
 
 ## Final Report

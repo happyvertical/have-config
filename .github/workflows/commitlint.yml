@@ -50,16 +50,21 @@ jobs:
             fi
             # Scope grammar:
             #   scope    = segment ("," segment)*
-            #   segment  = [a-z0-9] ([a-z0-9/-]* [a-z0-9])?
-            # Each comma-separated segment must start AND end with an
-            # alphanumeric character. A single alphanumeric is a valid
-            # segment. Forward slash and hyphen are allowed only
-            # BETWEEN alphanumerics within a segment, never at the
-            # boundary. Tokenizing rejects malformed scopes like
-            # `fix(a,):`, `fix(a/):`, `fix(a,,b):`, `fix(a-):`,
-            # `fix(,b):`, and `fix(/foo):` that a looser pattern
-            # would accept.
-            if ! printf '%s' "$msg" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|chore|ci|build|revert)(\([a-z0-9]([a-z0-9/-]*[a-z0-9])?(,[a-z0-9]([a-z0-9/-]*[a-z0-9])?)*\))?!?: .+'; then
+            #   segment  = "@"? alpha-run ( ("/" | "-") alpha-run )*
+            #   alpha-run = [a-z0-9]+
+            # Each comma-separated segment is:
+            # - optional leading "@" (for scoped npm packages like
+            #   "@happyvertical/sql")
+            # - one or more alphanumeric runs separated by single
+            #   "/" or "-" characters (no repeated separators like
+            #   "a//b" or "a--b", no trailing separators like "a/"
+            #   or "a-", no leading separators after the optional "@")
+            # Examples that pass: fix(release), fix(review-cycle,ship),
+            #   chore(tibdex/github-app-token), feat(@happyvertical/sql)
+            # Examples that fail: fix(a,), fix(a/), fix(a-), fix(a,,b),
+            #   fix(a//b), fix(a--b), fix(,b), fix(/foo), fix(Foo),
+            #   fix(have:review-cycle)
+            if ! printf '%s' "$msg" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|chore|ci|build|revert)(\(@?[a-z0-9]+([/-][a-z0-9]+)*(,@?[a-z0-9]+([/-][a-z0-9]+)*)*\))?!?: .+'; then
               msg_escaped=$(escape_wc "$msg")
               echo "::error::Invalid commit message: $msg_escaped"
               echo "  Expected format: type(scope?): subject"

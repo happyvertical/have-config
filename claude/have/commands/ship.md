@@ -174,7 +174,9 @@ Then branch on the gate result:
 
 - If `/review-cycle` returns `clean`, continue to commit and PR.
 - If it returns `partial`, branch on the reason recorded in
-  `Skipped reviewers` or `Accepted P2`:
+  `Skipped reviewers` (the only documented cause of `partial` —
+  Accepted P2 ends in `clean`, not `partial`, per the Status
+  contract):
   - **Partial because copilot-cli was skipped** (org policy block,
     network failure, missing auth, etc.): open the PR as a **draft**
     so the Copilot bot can review post-push.

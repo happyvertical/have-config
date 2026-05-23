@@ -4,10 +4,24 @@
 node_modules/
 
 # Copilot CLI session transcripts can leak into the working dir if
-# probe prompts reference filenames. Narrow to the specific transcript
-# prefix copilot uses; don't ignore generic `*-test.jsonl` patterns
-# that could match legitimate fixtures (e.g. `fixtures/payment-test.jsonl`).
-# The real rule lives in the review-cycle docs: review outputs go to
-# /tmp, not the repo.
-.copilot-session-*.jsonl
+# probe prompts reference filenames. Per `gh copilot -- --help`:
+# - `--share[=path]` writes `copilot-session-<id>.md` (markdown) in
+#   cwd by default
+# - `--output-format json` writes JSONL to stdout (not a file)
+# - `--log-dir <dir>` defaults to `~/.copilot/logs/` (outside repo)
+#
+# We ignore the `.md` form (the documented file leak vector) and
+# keep the `.jsonl` form for defense-in-depth — an earlier real
+# incident (commit 1fc8677) leaked `.deny-test.jsonl` /
+# `.revparse-test.jsonl` from Copilot's own tool-permission probes
+# that the current CLI may have renamed but could resurface. Keeping
+# both prefixes narrow (no wildcard `*-test.jsonl` — that would hide
+# legitimate fixtures).
+#
+# The PRIMARY prevention is the review-cycle docs' rule: review
+# outputs go to /tmp, not the repo. These patterns are belt-and-
+# suspenders.
+copilot-session-*.md
+.copilot-session-*.md
 copilot-session-*.jsonl
+.copilot-session-*.jsonl
