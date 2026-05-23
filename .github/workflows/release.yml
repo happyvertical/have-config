@@ -153,25 +153,36 @@ jobs:
           #      run to re-include the same commits)
           if git diff --quiet -- 'packages/*/package.json' \
             && git diff --cached --quiet -- 'packages/*/package.json'; then
-            # No package bumped — but `changeset:version` may have
-            # consumed (deleted) a manual no-op changeset. If we exit
-            # here without committing that deletion, the no-op
-            # changeset stays on origin/main, and EVERY future push
-            # repeats the same no-op cycle, silently blocking real
-            # releases until someone notices and deletes it by hand.
-            # Push the cleanup commit so the blocker is gone.
+            # No package versions bumped after changeset:version.
+            #
+            # Two sub-cases:
+            #   (a) Nothing changed at all — auto-changeset deferred
+            #       and had no commits to act on, OR no manual
+            #       changeset existed. Legitimate no-op; exit clean.
+            #   (b) Tree changed but no package.json did — almost
+            #       certainly an empty manual changeset (frontmatter
+            #       with no package bumps) was consumed by
+            #       changeset:version. The deletion is in the tree but
+            #       no release happened.
+            #
+            # Empty changesets are NOT supported as a "skip release"
+            # signal in this repo. auto-changeset.ts uses the most
+            # recent per-package tag as its lower bound; nothing
+            # advances that boundary on a no-op release. The next push
+            # would re-include the commits the empty changeset was
+            # meant to skip and release them anyway, defeating the
+            # operator's intent.
+            #
+            # Fail loudly on case (b) so the operator either fills in
+            # the bumps or deletes the empty changeset.
             if ! git diff --quiet || ! git diff --cached --quiet; then
-              echo "No package bumps but tree changed — committing cleanup of consumed no-op changesets."
-              git add -A
-              git commit -m "chore(release): clean up consumed no-op changesets"
-              git fetch origin +refs/heads/main:refs/remotes/origin/main
-              if [ "$(git rev-parse origin/main)" != "$(git rev-parse HEAD~1)" ]; then
-                echo "::error::origin/main advanced during this run — aborting cleanup push."
-                exit 1
-              fi
-              git push origin main
+              echo "::error::Tree changed but no package.json bumped — likely an empty manual changeset was consumed."
+              echo "::error::Empty/no-release changesets are not supported in this repo. Either add package bump lines to the changeset frontmatter (e.g. \"'@happyvertical/eslint-config': patch\") or delete the empty changeset file from .changeset/."
+              echo "::error::Files changed by changeset:version:"
+              git diff --name-only HEAD || true
+              exit 1
             fi
-            echo "No package.json bumps after changeset:version — nothing to publish."
+            echo "No releasable changes after changeset:version — nothing to publish."
             exit 0
           fi
 
@@ -230,7 +241,18 @@ jobs:
           #    the interval, AFTER packages have already been published
           #    to the registry. That'd leave registry/git drift the
           #    publish-only recovery path is meant to avoid.
-          git push origin --tags
+          #
+          #    `--atomic` makes the push all-or-nothing for the set of
+          #    refs included. Without it, a partial network/auth
+          #    failure mid-push could land some per-package tags on
+          #    origin and leave others local-only. The step-0
+          #    untagged-bump detector relies on LAST_PKG_TAG being
+          #    NULL when no tags from a failed release reached origin;
+          #    a partial tag push would set LAST_PKG_TAG to a freshly-
+          #    pushed sibling tag, the detector would treat the range
+          #    as already-released, and the missing tags would silently
+          #    persist.
+          git push --atomic origin --tags
 
       - name: Publish only (recovery from partial publish failure)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'publish-only' }}
@@ -309,10 +331,12 @@ jobs:
           # would scan too far back and double-include old commits.
           pnpm changeset tag
 
-          # Push tags only — recovery never touches the main branch
-          # ref. The release commit was already pushed by the failed
-          # auto run; pushing main again here would only succeed if
-          # main hadn't advanced (which our guard above already
-          # ensures), so it'd be redundant. Explicit tag-only push
-          # keeps the intent clear.
-          git push origin --tags
+          # Push tags only, atomically — recovery never touches the
+          # main branch ref. The release commit was already pushed by
+          # the failed auto run; pushing main again here would only
+          # succeed if main hadn't advanced (which our guard above
+          # already ensures), so it'd be redundant. `--atomic` makes
+          # the tag push all-or-nothing so a partial push can't leave
+          # the repo in the same hidden-untagged-bump state we're
+          # trying to recover from. See auto path for full rationale.
+          git push --atomic origin --tags
