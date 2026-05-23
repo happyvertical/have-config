@@ -27,6 +27,20 @@ jobs:
           # GitHub Actions injection-defense guidance.
           COMMITS=$(git log --format=%s "$BASE_SHA".."$HEAD_SHA")
 
+          # Escape `%`, CR, LF in user-controlled commit messages
+          # before printing inside `::error::` workflow commands. Per
+          # GitHub's workflow-commands docs, unescaped event-payload
+          # strings can corrupt the command payload or inject
+          # additional workflow commands via `%`, `\r`, or `\n` in
+          # the source string.
+          escape_wc() {
+            local s="$1"
+            s="${s//%/%25}"
+            s="${s//$'\r'/%0D}"
+            s="${s//$'\n'/%0A}"
+            printf '%s' "$s"
+          }
+
           FAILED=0
           while IFS= read -r msg; do
             [[ -z "$msg" ]] && continue
@@ -34,10 +48,20 @@ jobs:
             if [[ "$msg" =~ ^Merge\  ]]; then
               continue
             fi
-            if ! echo "$msg" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|chore|ci|build|revert)(\([a-z0-9-]+\))?!?: .+'; then
-              echo "::error::Invalid commit message: $msg"
+            # Scope allows alphanumeric, hyphen, comma, and forward
+            # slash. Comma covers multi-scope commits common when a
+            # single change touches two related surfaces (e.g.
+            # `fix(review-cycle,ship): ...` for a PR editing both
+            # slash command files in tandem). Forward slash covers
+            # dependency-name scopes like `chore(tibdex/github-app-token)`.
+            # First char must be alphanumeric to prevent stray
+            # punctuation leading the scope.
+            if ! printf '%s' "$msg" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|chore|ci|build|revert)(\([a-z0-9][a-z0-9,/-]*\))?!?: .+'; then
+              msg_escaped=$(escape_wc "$msg")
+              echo "::error::Invalid commit message: $msg_escaped"
               echo "  Expected format: type(scope?): subject"
               echo "  Valid types: feat, fix, docs, style, refactor, perf, test, chore, ci, build, revert"
+              echo "  Scope chars: alphanumeric, hyphen, comma (multi-scope), forward slash (e.g. dep names)"
               FAILED=1
             fi
           done <<< "$COMMITS"
