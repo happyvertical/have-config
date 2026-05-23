@@ -150,7 +150,13 @@ jobs:
           pnpm changeset:publish
 
           # 7. Push the per-package tags created by changeset:publish.
-          git push --tags origin main
+          #    Push tags only — main was already pushed at step 5 before
+          #    publish ran. Pushing `main` again here would fail with a
+          #    non-fast-forward rejection if any other commit landed in
+          #    the interval, AFTER packages have already been published
+          #    to the registry. That'd leave registry/git drift the
+          #    publish-only recovery path is meant to avoid.
+          git push origin --tags
 
       - name: Publish only (recovery from partial publish failure)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'publish-only' }}
@@ -170,8 +176,48 @@ jobs:
           # run). `changeset publish` is idempotent for versions
           # already on the registry; it only attempts unpublished
           # versions.
-          echo "Recovery mode: running changeset:publish against current main."
+
+          # Guard: refuse to publish unless HEAD is the failed release's
+          # `chore(release):` commit AND nothing new has landed on
+          # origin/main. Without this, recovery could publish stale
+          # version numbers from `R` (the failed release commit) with
+          # the source tree of any later commit `N` that landed in the
+          # meantime — the registry artifact would silently contain
+          # post-version-commit code. Recovery is only safe immediately
+          # after a failed publish, before any new commits land.
+          git fetch origin main
+          HEAD_MSG=$(git log -1 --pretty=%s HEAD)
+          if ! printf '%s' "$HEAD_MSG" | grep -q '^chore(release):'; then
+            echo "::error::Recovery requires HEAD to be a chore(release): commit. HEAD subject is: $HEAD_MSG"
+            echo "::error::If the failed release commit is no longer at HEAD, resolve manually — do not use this recovery path."
+            exit 1
+          fi
+          if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
+            echo "::error::origin/main has advanced past HEAD. Recovery would publish the wrong tree."
+            echo "::error::Resolve manually (e.g. revert the new commits, or hand-publish from a clean checkout of the failed release commit)."
+            exit 1
+          fi
+
+          echo "Recovery mode: running changeset:publish against current main ($(git rev-parse --short HEAD))."
           pnpm changeset:publish
 
-          # Push any tags created by the publish.
-          git push --tags origin main
+          # Repair tags for packages whose versions are already
+          # published but missing local tags. In a partial failure, the
+          # first run can succeed publishing + locally tagging some
+          # packages before erroring out — those local tags die with
+          # the runner. On recovery, `changeset publish` skips
+          # already-published versions (correctly idempotent), so the
+          # tags are never recreated by publish alone. `changeset tag`
+          # reads package.json versions and creates any missing tags;
+          # without it, `git push --tags` would push nothing for those
+          # packages and the next auto run's tag-based release boundary
+          # would scan too far back and double-include old commits.
+          pnpm changeset tag
+
+          # Push tags only — recovery never touches the main branch
+          # ref. The release commit was already pushed by the failed
+          # auto run; pushing main again here would only succeed if
+          # main hadn't advanced (which our guard above already
+          # ensures), so it'd be redundant. Explicit tag-only push
+          # keeps the intent clear.
+          git push origin --tags
