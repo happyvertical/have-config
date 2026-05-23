@@ -4,6 +4,23 @@ on:
   push:
     branches:
       - main
+  # Recovery path for partial publish failures. If `pnpm
+  # changeset:publish` fails after the version commit was already
+  # pushed (network glitch, registry outage, transient auth), the
+  # version bump is on main but packages aren't published. Re-running
+  # this workflow via the push event would either be skipped by the
+  # chore(release) guard or hit the main-advanced check. Operators
+  # can instead trigger `workflow_dispatch` with mode=publish-only to
+  # check out current main and run just `changeset publish`.
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'release flow mode'
+        type: choice
+        options:
+          - auto         # normal: auto-changeset → version → commit → push → publish
+          - publish-only # recovery: skip auto-changeset and version; just publish from current main
+        default: auto
 
 concurrency:
   group: release-${{ github.ref }}
@@ -12,18 +29,28 @@ concurrency:
 permissions:
   contents: write
   packages: write    # publish to GitHub Packages
-  id-token: write    # attestations
 
 jobs:
   release:
     name: Direct-publish
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Skip the workflow's own chore(release) commits. Without this guard,
-    # every release commit would trigger another (no-op) run. The
-    # auto-changeset script would catch it too, but skipping at job level
-    # saves the runner.
-    if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
+    # Skip the workflow's own release commits during the `push` event.
+    # Without this guard, every workflow-created release commit would
+    # trigger another (no-op) run. `workflow_dispatch` invocations are
+    # never skipped — that's the recovery path.
+    #
+    # Match on subject prefix AND committer identity together. Subject
+    # alone (`chore(release):`) is also a valid human Conventional
+    # Commit — e.g. `chore(release): bump pnpm/action-setup` for a
+    # dependency update. A human-written `chore(release):` commit
+    # filtered out here would never trigger a release for its own
+    # changes, AND would be filtered out of the auto-changeset summary
+    # on the next run (see scripts/auto-changeset.ts) — silently
+    # invisible in release notes. The bot identity is set only by
+    # this workflow's Configure git identity step, so combining the
+    # two prevents human commits from accidentally matching.
+    if: ${{ github.event_name == 'workflow_dispatch' || !(startsWith(github.event.head_commit.message, 'chore(release):') && github.event.head_commit.committer.name == 'have-release-bot') }}
     steps:
       # Mint a token from the HAVE_RELEASE GitHub App (org-wide secret
       # pair). Used as GITHUB_TOKEN (for the chore(release) push back to
@@ -65,7 +92,8 @@ jobs:
           git config user.name "have-release-bot"
           git config user.email "have-release[bot]@users.noreply.github.com"
 
-      - name: Auto-changeset, version, commit, publish
+      - name: Auto-changeset, version, commit, push, then publish
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.mode == 'auto' }}
         env:
           GITHUB_TOKEN: ${{ steps.token.outputs.token }}
           NODE_AUTH_TOKEN: ${{ steps.token.outputs.token }}
@@ -73,12 +101,73 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Use eslint-config as the canonical version source (all three
-          # packages are version-locked by auto-changeset).
-          BEFORE=$(node -p "require('./packages/eslint-config/package.json').version")
-          echo "::group::Before"
-          echo "Version before: $BEFORE"
-          echo "::endgroup::"
+          # 0. Refuse to start if a previous release didn't complete
+          #    its tag push. Symptom: an untagged `chore(release): bump`
+          #    commit exists since the last `@happyvertical/*@*` tag
+          #    (or anywhere in history if no package tags exist yet —
+          #    that's the first-release-partial-failure case). If we
+          #    proceeded, `auto-changeset` would scan that range,
+          #    filter out the chore commit, and re-include the
+          #    commits that were already published — causing a
+          #    duplicate release with duplicated changelog entries.
+          #
+          #    Detector intentionally narrowed to `bump ` (the
+          #    version-bump message format set by step 4 below). The
+          #    cleanup path further down creates `chore(release):
+          #    clean up consumed no-op changesets` commits which are
+          #    NOT failed releases — matching them here would
+          #    self-block every future run after any cleanup landed.
+          LAST_PKG_TAG=$(git tag --list '@happyvertical/*@*' --sort=-creatordate | head -1 || true)
+          if [ -n "$LAST_PKG_TAG" ]; then
+            UNTAGGED_RANGE="$LAST_PKG_TAG..HEAD"
+          else
+            # No package tags exist yet. Scan all history — covers the
+            # first-release case where the initial publish/tag-push
+            # partially failed and left an untagged bump commit.
+            UNTAGGED_RANGE="HEAD"
+          fi
+          # Subject + committer identity together — subject alone is
+          # ambiguous because a human commit like `chore(release):
+          # bump pnpm/action-setup` is a valid Conventional Commit
+          # that matches the bump pattern but is NOT a failed release
+          # (it's a dependency-bump chore). On its own push it's
+          # skipped by the job-level chore(release) filter; the NEXT
+          # push then hits this detector, exits 1, no boundary
+          # advances, and every future release deadlocks until an
+          # operator manually fixes it.
+          #
+          # The bot identity (`have-release-bot`, set above) is set
+          # only by THIS workflow. Filtering by both subject AND
+          # committer means only workflow-created commits can trip
+          # the detector — human authors can't accidentally produce
+          # the marker even with a matching subject.
+          #
+          # `git log --grep` would match commit bodies (subject +
+          # body), not just subjects, so we use `--committer` for
+          # identity but pipe `%s` through awk for subject matching.
+          #
+          # awk scans the full input (no `exit` on match) deliberately:
+          # under `set -o pipefail`, an early `exit` would close awk's
+          # stdin, git log would die on SIGPIPE (exit 141), and the
+          # pipeline would return non-zero. Bash command substitution
+          # without `inherit_errexit` silently swallows the failure
+          # and produces empty $UNTAGGED_RELEASE — the detector would
+          # be bypassed entirely. Letting awk consume all input
+          # avoids SIGPIPE. Recording the first match in a variable
+          # and printing at END preserves "first match wins" semantics
+          # without the early-exit hazard.
+          UNTAGGED_RELEASE=$(git log "$UNTAGGED_RANGE" \
+            --committer='have-release-bot' \
+            --pretty='%H %s' \
+            | awk '/^[a-f0-9]+ chore\(release\): bump / && !found {hash=$1; found=1} END {if (found) print hash}')
+          if [ -n "$UNTAGGED_RELEASE" ]; then
+            echo "::error::Found untagged chore(release): bump commit $UNTAGGED_RELEASE in range $UNTAGGED_RANGE."
+            echo "::error::The previous release left an unfinished state — either changeset:publish or the tag push failed before completing."
+            echo "::error::Recovery:"
+            echo "::error::  1. If HEAD is still that bump commit: trigger workflow_dispatch with mode=publish-only. This re-runs changeset:publish (idempotent — skips already-published versions) AND changeset tag (creates missing per-package tags) AND pushes tags. Single action handles both failure modes."
+            echo "::error::  2. If HEAD has advanced past it (likely, since this guard is firing): you cannot use publish-only recovery. Manually verify on npm.pkg.github.com which package versions actually published, hand-create + push per-package tags ONLY for those (e.g. \`git tag '@happyvertical/eslint-config@0.2.0' $UNTAGGED_RELEASE && git push origin --tags\`). For packages that weren't published, run \`pnpm changeset publish\` against the bump commit from a clean checkout. Do NOT push tags for versions that don't exist on the registry — future runs would treat them as the release boundary and skip publishing those versions."
+            exit 1
+          fi
 
           # 1. Generate a changeset from conventional commits since the
           #    last release (or defer if a manual changeset is present).
@@ -88,29 +177,223 @@ jobs:
           #    CHANGELOG.md entries + deletes consumed .changeset/*.md.
           pnpm changeset:version
 
-          AFTER=$(node -p "require('./packages/eslint-config/package.json').version")
-          echo "::group::After"
-          echo "Version after: $AFTER"
-          echo "::endgroup::"
-
-          if [ "$BEFORE" = "$AFTER" ]; then
-            echo "No version change — nothing to publish."
+          # 3. Gate on whether any package.json version actually
+          #    changed. Scoping the diff to `packages/*/package.json`
+          #    (rather than the whole working tree) catches both:
+          #    - subset bumps (manual changeset for only one package
+          #      bumps that one's package.json; the old single-package
+          #      gate for eslint-config would have skipped)
+          #    - empty changesets (a manual `---\n---` changeset
+          #      causes `changeset version` to delete the file but
+          #      not bump any package.json; a working-tree-wide gate
+          #      would have committed the deletion + run publish as
+          #      a no-op + advanced no tag, leaving the next auto
+          #      run to re-include the same commits)
+          if git diff --quiet -- 'packages/*/package.json' \
+            && git diff --cached --quiet -- 'packages/*/package.json'; then
+            # No package versions bumped after changeset:version.
+            #
+            # Two sub-cases:
+            #   (a) Nothing changed at all — auto-changeset deferred
+            #       and had no commits to act on, OR no manual
+            #       changeset existed. Legitimate no-op; exit clean.
+            #   (b) Tree changed but no package.json did — almost
+            #       certainly an empty manual changeset (frontmatter
+            #       with no package bumps) was consumed by
+            #       changeset:version. The deletion is in the tree but
+            #       no release happened.
+            #
+            # Empty changesets are NOT supported as a "skip release"
+            # signal in this repo. auto-changeset.ts uses the most
+            # recent per-package tag as its lower bound; nothing
+            # advances that boundary on a no-op release. The next push
+            # would re-include the commits the empty changeset was
+            # meant to skip and release them anyway, defeating the
+            # operator's intent.
+            #
+            # Fail loudly on case (b) so the operator either fills in
+            # the bumps or deletes the empty changeset.
+            if ! git diff --quiet || ! git diff --cached --quiet; then
+              echo "::error::Tree changed but no package.json bumped — likely an empty manual changeset was consumed."
+              echo "::error::Empty/no-release changesets are not supported in this repo. Either add package bump lines to the changeset frontmatter (e.g. \"'@happyvertical/eslint-config': patch\") or delete the empty changeset file from .changeset/."
+              echo "::error::Files changed by changeset:version:"
+              git diff --name-only HEAD || true
+              exit 1
+            fi
+            echo "No releasable changes after changeset:version — nothing to publish."
             exit 0
           fi
 
-          echo "Bumping $BEFORE → $AFTER"
+          # Identify which packages actually bumped this run. Used
+          # both for logging and for the commit message — naming a
+          # specific version (like `v$ESLINT_VERSION`) would be wrong
+          # for subset releases via manual changesets that bump only
+          # one or two packages. Per-package versions live in the
+          # tags created by `changeset publish`.
+          BUMPED=$(git diff --name-only -- 'packages/*/package.json' \
+            | sed 's|packages/\(.*\)/package.json|\1|' \
+            | paste -sd ',' -)
+          echo "Bumped packages: $BUMPED"
 
-          # 3. Commit the version bumps + changelog entries. The chore
+          # 4. Commit the version bumps + changelog entries. The chore
           #    prefix matches what the job-level `if:` guard filters.
           git add -A
-          git commit -m "chore(release): v$AFTER"
+          git commit -m "chore(release): bump $BUMPED"
 
-          # 4. Publish to GitHub Packages. `changeset publish` also
+          # 5. Verify main hasn't moved out from under us, then push
+          #    the commit BEFORE publishing. Order matters: if publish
+          #    runs first and then the push fails (because main
+          #    advanced mid-job), we get registry/git drift — registry
+          #    has the new versions, main doesn't have the bump
+          #    commit, and the next run tries to republish.
+          #
+          #    Push order: commit first, then publish, then tags.
+          #    `changeset:publish` creates per-package tags locally;
+          #    we push them afterwards.
+          # Explicit destination refspec — `git fetch origin main` with
+          # a source-only refspec is config-dependent: under some setups
+          # (custom refspecs, partial/shallow clones) it only updates
+          # FETCH_HEAD, not `refs/remotes/origin/main`. The `+` forces
+          # the remote-tracking branch to update non-fast-forward too.
+          git fetch origin +refs/heads/main:refs/remotes/origin/main
+          if [ "$(git rev-parse origin/main)" != "$(git rev-parse HEAD~1)" ]; then
+            echo "::error::origin/main advanced during this run. Aborting before publish to avoid registry/git drift. The next push to main will re-run and pick up the new state."
+            exit 1
+          fi
+          git push origin main
+
+          # 6. Publish to GitHub Packages. changeset:publish also
           #    creates per-package git tags (e.g.
-          #    `@happyvertical/eslint-config@0.2.0`).
+          #    `@happyvertical/eslint-config@0.2.0`). If publish
+          #    partially fails, the commit is already on main so
+          #    state is at least consistent. Recovery: re-trigger this
+          #    workflow with workflow_dispatch + mode=publish-only.
+          #    Versions already published are idempotent under
+          #    `changeset publish`.
           pnpm changeset:publish
 
-          # 5. Push the release commit AND the tags created by publish.
-          #    --follow-tags ensures any annotated/lightweight tags
-          #    pointing at HEAD go with the push.
-          git push --follow-tags origin main
+          # 7. Push the per-package tags created by changeset:publish.
+          #    Push tags only — main was already pushed at step 5 before
+          #    publish ran. Pushing `main` again here would fail with a
+          #    non-fast-forward rejection if any other commit landed in
+          #    the interval, AFTER packages have already been published
+          #    to the registry. That'd leave registry/git drift the
+          #    publish-only recovery path is meant to avoid.
+          #
+          #    `--atomic` makes the push all-or-nothing for the set of
+          #    refs included. Without it, a partial network/auth
+          #    failure mid-push could land some per-package tags on
+          #    origin and leave others local-only. The step-0
+          #    untagged-bump detector relies on LAST_PKG_TAG being
+          #    NULL when no tags from a failed release reached origin;
+          #    a partial tag push would set LAST_PKG_TAG to a freshly-
+          #    pushed sibling tag, the detector would treat the range
+          #    as already-released, and the missing tags would silently
+          #    persist.
+          git push --atomic origin --tags
+
+      - name: Publish only (recovery from partial publish failure)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'publish-only' }}
+        env:
+          GITHUB_TOKEN: ${{ steps.token.outputs.token }}
+          NODE_AUTH_TOKEN: ${{ steps.token.outputs.token }}
+          NPM_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          set -euo pipefail
+
+          # Recovery path: a previous auto run committed + pushed the
+          # version bump but `changeset publish` failed before
+          # completing (network glitch, registry outage). We're now
+          # on current main, which contains the unpublished version
+          # bumps. Run publish only — no auto-changeset, no
+          # changeset:version (those already happened on the failed
+          # run). `changeset publish` is idempotent for versions
+          # already on the registry; it only attempts unpublished
+          # versions.
+
+          # Guard: refuse to publish unless HEAD is the failed release's
+          # `chore(release): bump …` commit AND nothing new has landed
+          # on origin/main. Without this, recovery could publish stale
+          # version numbers from `R` (the failed release commit) with
+          # the source tree of any later commit `N` that landed in the
+          # meantime — the registry artifact would silently contain
+          # post-version-commit code. Recovery is only safe immediately
+          # after a failed publish, before any new commits land.
+          #
+          # Pattern is narrowed to `bump ` specifically. The auto path
+          # creates two flavours of chore(release): commit — the actual
+          # version bump (`chore(release): bump <pkgs>`) and the no-op
+          # cleanup (`chore(release): clean up consumed no-op
+          # changesets`). Only the bump variant is a valid recovery
+          # target; running publish-only with the cleanup commit at
+          # HEAD would call `changeset tag` against a commit that
+          # doesn't actually contain version bumps, pinning tags to
+          # the wrong SHA.
+          #
+          # Explicit destination refspec — see auto path above for why
+          # `git fetch origin main` alone is not reliable for updating
+          # `refs/remotes/origin/main` under all configurations.
+          git fetch origin +refs/heads/main:refs/remotes/origin/main
+          HEAD_MSG=$(git log -1 --pretty=%s HEAD)
+          HEAD_COMMITTER=$(git log -1 --pretty=%cn HEAD)
+          # Check subject AND committer identity. Subject alone is
+          # ambiguous: `chore(release): bump pnpm/action-setup` is a
+          # legit human conventional commit that would otherwise pass
+          # this guard and reach `pnpm changeset:publish` against the
+          # wrong source tree. The bot identity is set only by this
+          # workflow's auto step, so it's a reliable machine-only
+          # marker for "commit was created by the auto release path".
+          if ! printf '%s' "$HEAD_MSG" | grep -q '^chore(release): bump ' \
+            || [ "$HEAD_COMMITTER" != "have-release-bot" ]; then
+            # Escape `%`, CR, LF before embedding user-controlled
+            # git metadata in workflow commands — per GitHub's
+            # workflow-commands docs, those bytes can corrupt the
+            # command payload or inject additional commands. Git
+            # accepts CR/LF in committer names (verified empirically),
+            # so both HEAD_MSG and HEAD_COMMITTER need escaping.
+            escape_wc() {
+              local s="$1"
+              s="${s//%/%25}"
+              s="${s//$'\r'/%0D}"
+              s="${s//$'\n'/%0A}"
+              printf '%s' "$s"
+            }
+            HEAD_MSG_ESCAPED=$(escape_wc "$HEAD_MSG")
+            HEAD_COMMITTER_ESCAPED=$(escape_wc "$HEAD_COMMITTER")
+            echo "::error::Recovery requires HEAD to be a 'chore(release): bump …' commit by have-release-bot."
+            echo "::error::HEAD subject: $HEAD_MSG_ESCAPED"
+            echo "::error::HEAD committer: $HEAD_COMMITTER_ESCAPED"
+            echo "::error::If the failed release commit is no longer at HEAD, resolve manually — do not use this recovery path."
+            exit 1
+          fi
+          if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
+            echo "::error::origin/main has advanced past HEAD. Recovery would publish the wrong tree."
+            echo "::error::Resolve manually (e.g. revert the new commits, or hand-publish from a clean checkout of the failed release commit)."
+            exit 1
+          fi
+
+          echo "Recovery mode: running changeset:publish against current main ($(git rev-parse --short HEAD))."
+          pnpm changeset:publish
+
+          # Repair tags for packages whose versions are already
+          # published but missing local tags. In a partial failure, the
+          # first run can succeed publishing + locally tagging some
+          # packages before erroring out — those local tags die with
+          # the runner. On recovery, `changeset publish` skips
+          # already-published versions (correctly idempotent), so the
+          # tags are never recreated by publish alone. `changeset tag`
+          # reads package.json versions and creates any missing tags;
+          # without it, `git push --tags` would push nothing for those
+          # packages and the next auto run's tag-based release boundary
+          # would scan too far back and double-include old commits.
+          pnpm changeset tag
+
+          # Push tags only, atomically — recovery never touches the
+          # main branch ref. The release commit was already pushed by
+          # the failed auto run; pushing main again here would only
+          # succeed if main hadn't advanced (which our guard above
+          # already ensures), so it'd be redundant. `--atomic` makes
+          # the tag push all-or-nothing so a partial push can't leave
+          # the repo in the same hidden-untagged-bump state we're
+          # trying to recover from. See auto path for full rationale.
+          git push --atomic origin --tags
