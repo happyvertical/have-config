@@ -214,12 +214,15 @@ Then branch on the gate result:
     fixes after the bot reviewed, request a re-review on the new
     SHA before clearing. Document the substitution in the PR body
     so the audit trail is clear.
-  - **Partial because a different required reviewer was skipped**
-    (codex-cli unavailable, claude-cli subprocess auth fails): open as
-    draft and call out the skip in the PR body so a human can
-    decide whether the remaining reviewer coverage is sufficient.
-    Don't mark ready until the skipped reviewer can run or a human
-    explicitly accepts the gap with rationale in the PR body.
+  - **Partial because a different required reviewer slot was unfilled**
+    (codex-cli unavailable, OR claude-cli auth fails — Codex CLI
+    orchestrator has no sub-agent substitute — OR the orchestrator
+    slot was unfilled because no explicit `{findings: []}` checklist
+    pass was produced this round): open as draft and call out the
+    skip in the PR body so a human can decide whether the remaining
+    reviewer coverage is sufficient. Don't mark ready until the
+    skipped slot can be filled or a human explicitly accepts the
+    gap with rationale in the PR body.
 - If it returns `blocked`, stop before opening ready PRs. Open draft PRs only when the user passed `draft` or a draft would help expose the blocker.
   - **Special sub-case: blocked because of `verify-round-blocked-by-cap`** (a P0/P1/P2 fix landed in the final permitted `/review-cycle` round). The fix may be correct but no verify round confirmed it. Don't ship — re-run `/review-cycle rounds=N+1` (or higher) to let the verify round complete, then re-attempt `/ship`. Calling this out explicitly because the failure mode looks like "clean" to a literal reader (the tree post-fix surfaces no findings) but actually means "findings were never sought".
 - If `/review-cycle` changed files, rerun the relevant validation and documentation checks before committing.

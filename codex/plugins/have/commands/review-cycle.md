@@ -8,7 +8,7 @@ Run a bounded review cycle on the current work independent of shipping. Default 
 
 The parent agent running this command is **Codex CLI**. The command orchestrates a **4-reviewer ensemble**: three independent reviewer subprocesses — a separate codex-cli invocation, claude-cli, and GitHub copilot-cli — plus the orchestrator's own explicit checklist pass against the same commit. Different models have different blind spots; the ensemble catches more than any single tool.
 
-When OAuth or auth issues block any subprocess reviewer, the parent should record the unavailability in the final report and either resolve the blocker (e.g. `claude setup-token` for claude-cli, org Copilot policy toggle for copilot-cli) or explicitly accept the reduced-coverage tradeoff with rationale. Don't silently drop a reviewer.
+When OAuth or auth issues block any subprocess reviewer, the parent should record the unavailability in the `Skipped reviewers` field of the final report and let the Status contract drop to `partial` (per "Reviewer Availability" below). Resolve the blocker (e.g. `claude setup-token` for claude-cli, org Copilot policy toggle for copilot-cli) and re-run if you need `clean` for `/ship`; the "rationale" field is documentation of WHY the slot was skipped, NOT a way to keep Status=clean despite a skipped slot. The Status contract is strict — silent slot drops or "accept and continue" framings would let unreviewed code through `/ship`'s gate.
 
 The orchestrator's own pass is NOT silent-solo — it must be an explicit checklist run against the staged/committed diff, with findings written out in the same JSON shape the subprocesses produce. "I looked, it's fine" is not a review; an enumerated set of P0/P1/P2/P3 findings (including "no findings") is.
 
@@ -254,23 +254,71 @@ For reviews of **uncommitted/dirty work** (e.g. mid-edit review,
 `codex review --uncommitted` flows): the simple "is status empty"
 check fails because the tree was already dirty. Two options:
 
-1. **WIP commit before reviewing** (recommended): `git add -A &&
-   git commit -m "wip: review snapshot"`, run the round on the
-   committed state, then `git reset --mixed HEAD~1` afterwards
-   to restore the WIP as uncommitted changes. **Don't use `git
-   stash`** here — stash REMOVES the changes from the worktree,
-   so reviewers run against the pre-WIP tree (the wrong state)
-   and report findings on code you weren't reviewing. The WIP
-   commit keeps the dirty work in the tree as a real commit
-   the reviewers can see.
-2. **Snapshot comparison**: capture `git status --porcelain`,
-   `git diff` (unstaged), `git diff --cached` (staged/index),
-   and untracked-file content hashes BEFORE each reviewer;
-   capture again AFTER; diff the two captures. Any difference
-   (added/removed/modified files OR same-status-but-different-
-   content like `M path → M path` with different bytes, OR
-   index state changes) means the reviewer mutated state. More
-   complex but doesn't require any WIP commit dance.
+1. **Snapshot comparison** (recommended — no footguns):
+   capture `git status --porcelain`, `git diff` (unstaged),
+   `git diff --cached` (staged/index), and untracked-file
+   content hashes BEFORE each reviewer; capture again AFTER;
+   diff the two captures. Any difference (added/removed/modified
+   files OR same-status-but-different-content like `M path →
+   M path` with different bytes, OR index state changes) means
+   the reviewer mutated state.
+
+   Preserves your staging discipline exactly, doesn't include
+   unrelated untracked files in any commit, doesn't drop or
+   rewrite any commits.
+
+2. **WIP commit before reviewing** (manual-friendly alternative
+   — has sharp edges, read all caveats first):
+
+   ```bash
+   # Capture pre-state so we can restore staging discipline
+   git rev-parse HEAD > /tmp/pre-wip-head
+   git diff --cached > /tmp/pre-wip-staged.patch
+   git diff > /tmp/pre-wip-unstaged.patch
+   # Decide what gets reviewed — DON'T use `git add -A` blindly
+   # (it stages unrelated untracked files which then end up in
+   # `pr-review --base`'s diff sent to external reviewers).
+   # Use explicit pathspecs:
+   git add path/to/intended/files
+   WIP_SHA=$(git commit -m "wip: review snapshot" && git rev-parse HEAD)
+   # ... run reviewers (they see the WIP commit) ...
+   # Restore — verify HEAD didn't move, then identifier-check,
+   # then undo. This is the Hard Rules destructive-cleanup
+   # carve-out (`git reset` is normally prohibited; permitted
+   # here ONLY for undoing this script's own WIP commit).
+   if [ "$(git rev-parse HEAD)" != "$WIP_SHA" ]; then
+     echo "HEAD moved during review — refusing to auto-undo WIP"
+     exit 1
+   fi
+   git log -1 --format=%s | grep -q '^wip: review snapshot' || {
+     echo "HEAD is not the WIP commit"; exit 1
+   }
+   git reset --hard "$(cat /tmp/pre-wip-head)"
+   git apply --cached /tmp/pre-wip-staged.patch
+   git apply /tmp/pre-wip-unstaged.patch
+   ```
+
+   Caveats — why the snapshot path is recommended over this:
+   - **DON'T `git stash`** as a shortcut: stash REMOVES changes
+     from the worktree, so reviewers run against the pre-WIP
+     tree (the wrong state).
+   - **DON'T `git add -A`** blindly: it stages unrelated
+     untracked files (`.copilot-session-*.md`, scratch notes,
+     etc.) which end up in the WIP commit AND in `pr-review`'s
+     diff sent to external reviewers — potential local-data
+     leak.
+   - **DON'T `git reset --mixed HEAD~1`** without identifier-
+     check: `HEAD~1` is positional. If HEAD moved during the
+     review (an interrupted run, a stray amend, an Agent-tool
+     side commit), `HEAD~1` is not your WIP commit and the
+     reset silently drops the wrong commit. Verify with
+     `git rev-parse HEAD == $WIP_SHA` AND the commit subject
+     match BEFORE the reset.
+   - **The `git reset` calls above are Hard Rules destructive-
+     cleanup commands**. They're permitted here ONLY as part
+     of this script's own WIP-undo dance with the verify-then-
+     reset shape shown. Don't reach for `git reset --hard` or
+     `git reset --mixed` outside this carve-out.
 
 Either way, never just "is `git status` clean now" as the
 post-check — that only works when "clean" was the baseline.
@@ -500,7 +548,7 @@ Return a concise review-cycle report:
 - Worktrees: <paths>
 - Branches: <branches>
 - Validation: <commands run>
-- Reviews: <rounds and which reviewers fired per round; e.g. "5 rounds: codex-cli + claude-cli + copilot-cli + orchestrator". List ALL FOUR ensemble slots: codex-cli, claude-cli, copilot-cli, and the orchestrator's checklist pass. If a slot was skipped or unavailable, say so explicitly with the reason — silence reads as "ran" and confuses the Status gate. The Codex CLI orchestrator does not have a documented sub-agent substitute for claude-cli; unavailability means accept the reduced-coverage tradeoff with rationale>
+- Reviews: <rounds and which reviewers fired per round; e.g. "5 rounds: codex-cli + claude-cli + copilot-cli + orchestrator". List ALL FOUR ensemble slots: codex-cli, claude-cli, copilot-cli, and the orchestrator's checklist pass. If a slot was skipped or unavailable, say so explicitly with the reason — silence reads as "ran" and confuses the Status gate. The Codex CLI orchestrator does not have a documented sub-agent substitute for claude-cli; auth failure means the slot is skipped → Status drops to `partial` (the reason goes in `Skipped reviewers` below, not as "tradeoff" framing that keeps Status=clean)>
 - Docs: <updated, not needed because..., or findings only>
 - Dependency order: <upstream -> downstream edges or none>
 - Remaining blockers (P0/P1, or unaccepted P2): <none or concrete blockers>

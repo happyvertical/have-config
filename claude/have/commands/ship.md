@@ -218,12 +218,13 @@ Then branch on the gate result:
     so the audit trail is clear.
   - **Partial because a different required reviewer slot was unfilled**
     (codex-cli unavailable, OR claude slot couldn't be filled via
-    EITHER `claude -p` subprocess OR the sub-agent fallback): open
-    as draft and call out the skip in the PR body so a human can
-    decide whether the remaining reviewer coverage is sufficient.
-    Don't mark ready until the skipped slot can be filled or a
-    human explicitly accepts the gap with rationale in the PR
-    body.
+    EITHER `claude -p` subprocess OR the sub-agent fallback, OR the
+    orchestrator slot was unfilled because no explicit `{findings:
+    []}` checklist pass was produced this round): open as draft and
+    call out the skip in the PR body so a human can decide whether
+    the remaining reviewer coverage is sufficient. Don't mark ready
+    until the skipped slot can be filled or a human explicitly
+    accepts the gap with rationale in the PR body.
 
     Note: if `claude -p` failed but the sub-agent fallback succeeded,
     the claude slot IS filled (not skipped). `/review-cycle` should
