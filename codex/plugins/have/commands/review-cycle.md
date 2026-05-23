@@ -264,8 +264,15 @@ git diff --cached > "$SNAPSHOT_DIR/pre-staged.diff"
 # Capture untracked file contents (hash + path) so we can detect
 # if a reviewer added/modified untracked files. `git status` would
 # catch added/removed but not same-name-different-content edits.
+# NOTE: filenames are treated as DATA, never substituted into
+# shell source. `xargs -I{} sh -c '...{}...'` looks convenient but
+# is command-injectable — a file named `evil$(rm -rf ~).txt`
+# would execute the substitution. Use a null-delimited read loop
+# so each filename arrives as a bash variable (still data).
 git ls-files --others --exclude-standard -z \
-  | xargs -0 -I{} sh -c 'printf "%s  %s\n" "$(git hash-object "{}")" "{}"' \
+  | while IFS= read -r -d '' f; do
+      printf '%s  %s\n' "$(git hash-object -- "$f")" "$f"
+    done \
   | sort > "$SNAPSHOT_DIR/pre-untracked.txt"
 
 # ... run the reviewer ...
@@ -275,7 +282,9 @@ git status --porcelain > "$SNAPSHOT_DIR/post-status.txt"
 git diff > "$SNAPSHOT_DIR/post-unstaged.diff"
 git diff --cached > "$SNAPSHOT_DIR/post-staged.diff"
 git ls-files --others --exclude-standard -z \
-  | xargs -0 -I{} sh -c 'printf "%s  %s\n" "$(git hash-object "{}")" "{}"' \
+  | while IFS= read -r -d '' f; do
+      printf '%s  %s\n' "$(git hash-object -- "$f")" "$f"
+    done \
   | sort > "$SNAPSHOT_DIR/post-untracked.txt"
 
 if ! diff -q "$SNAPSHOT_DIR/pre-status.txt" "$SNAPSHOT_DIR/post-status.txt" >/dev/null \
