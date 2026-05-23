@@ -92,29 +92,37 @@ jobs:
 
           # 0. Refuse to start if a previous release didn't complete
           #    its tag push. Symptom: an untagged `chore(release): bump`
-          #    commit sits between the last `@happyvertical/*@*` tag
-          #    and HEAD. If we proceeded, `auto-changeset` would scan
-          #    `LAST_TAG..HEAD`, filter out the chore commit, and
-          #    re-include the commits that were already published —
-          #    causing a duplicate release with duplicated changelog
-          #    entries. Operator resolution: hand-push the missing
-          #    per-package tags for the already-published versions,
-          #    then re-run this workflow.
+          #    commit exists since the last `@happyvertical/*@*` tag
+          #    (or anywhere in history if no package tags exist yet —
+          #    that's the first-release-partial-failure case). If we
+          #    proceeded, `auto-changeset` would scan that range,
+          #    filter out the chore commit, and re-include the
+          #    commits that were already published — causing a
+          #    duplicate release with duplicated changelog entries.
           #
           #    Detector intentionally narrowed to `bump ` (the
-          #    version-bump message format). The cleanup path below
-          #    creates `chore(release): clean up consumed no-op
-          #    changesets` commits which are NOT failed releases —
-          #    matching them here would self-block every future run
-          #    after any no-op cleanup ever lands on main.
+          #    version-bump message format set by step 4 below). The
+          #    cleanup path further down creates `chore(release):
+          #    clean up consumed no-op changesets` commits which are
+          #    NOT failed releases — matching them here would
+          #    self-block every future run after any cleanup landed.
           LAST_PKG_TAG=$(git tag --list '@happyvertical/*@*' --sort=-creatordate | head -1 || true)
           if [ -n "$LAST_PKG_TAG" ]; then
-            UNTAGGED_RELEASE=$(git log "$LAST_PKG_TAG..HEAD" --pretty=%H --grep='^chore(release): bump ' | head -1)
-            if [ -n "$UNTAGGED_RELEASE" ]; then
-              echo "::error::Found untagged chore(release): bump commit $UNTAGGED_RELEASE since last per-package tag $LAST_PKG_TAG."
-              echo "::error::This indicates the previous release published packages but failed to push tags. Resolve manually: push the missing per-package tags for the published versions, then re-run."
-              exit 1
-            fi
+            UNTAGGED_RANGE="$LAST_PKG_TAG..HEAD"
+          else
+            # No package tags exist yet. Scan all history — covers the
+            # first-release case where the initial publish/tag-push
+            # partially failed and left an untagged bump commit.
+            UNTAGGED_RANGE="HEAD"
+          fi
+          UNTAGGED_RELEASE=$(git log "$UNTAGGED_RANGE" --pretty=%H --grep='^chore(release): bump ' | head -1)
+          if [ -n "$UNTAGGED_RELEASE" ]; then
+            echo "::error::Found untagged chore(release): bump commit $UNTAGGED_RELEASE in range $UNTAGGED_RANGE."
+            echo "::error::The previous release left an unfinished state — either changeset:publish or the tag push failed before completing."
+            echo "::error::Recovery:"
+            echo "::error::  1. If HEAD is still that bump commit: trigger workflow_dispatch with mode=publish-only. This re-runs changeset:publish (idempotent — skips already-published versions) AND changeset tag (creates missing per-package tags) AND pushes tags. Single action handles both failure modes."
+            echo "::error::  2. If HEAD has advanced past it (likely, since this guard is firing): you cannot use publish-only recovery. Manually verify on npm.pkg.github.com which package versions actually published, hand-create + push per-package tags ONLY for those (e.g. \`git tag '@happyvertical/eslint-config@0.2.0' $UNTAGGED_RELEASE && git push origin --tags\`). For packages that weren't published, run \`pnpm changeset publish\` against the bump commit from a clean checkout. Do NOT push tags for versions that don't exist on the registry — future runs would treat them as the release boundary and skip publishing those versions."
+            exit 1
           fi
 
           # 1. Generate a changeset from conventional commits since the
