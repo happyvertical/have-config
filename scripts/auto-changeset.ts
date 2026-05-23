@@ -41,14 +41,28 @@ const PACKAGES = [
 
 interface Commit {
   hash: string;
+  committer: string;
   subject: string;
 }
 
-// Subject-only output: hash + space + subject + newline per commit.
-// We don't fetch the body (we don't scan footers — see top-of-file
-// JSDoc), so newlines are safe as record separators: git commit
-// subjects can't contain newlines.
-const GIT_PRETTY_FORMAT = `%H %s`;
+// Three fields per line: hash, committer name, subject. Records are
+// separated by newline (subjects can't contain newlines). Fields are
+// separated by ASCII 31 (Unit Separator) emitted via git's `%x1f`
+// pretty-format escape — neither committer names nor subjects contain
+// that byte in practice, and emitting it via `%x<hex>` keeps the byte
+// OUT of argv (Node rejects NUL in argv and is awkward with other
+// control bytes).
+//
+// We need committer name to distinguish workflow-generated
+// `chore(release): bump …` commits (always committed by
+// `have-release-bot`) from identically-prefixed human commits like
+// `chore(release): bump pnpm/action-setup` — a valid Conventional
+// Commit that a human might write for a dependency bump. Filtering
+// by subject alone would silently exclude that human commit from
+// the auto-generated changelog.
+const GIT_PRETTY_FORMAT = `%H%x1f%cn%x1f%s`;
+const FIELD_SEP = '\x1f';
+const RELEASE_BOT_NAME = 'have-release-bot';
 
 /**
  * Run a git subcommand with args passed positionally. Uses execFileSync
@@ -110,19 +124,15 @@ function getCommitsSinceLastRelease(): Commit[] {
   const range = lastTag ? `${lastTag}..HEAD` : 'HEAD';
   const log = git('log', range, `--pretty=format:${GIT_PRETTY_FORMAT}`, '--no-merges');
   if (!log) return [];
-  // Split on newlines — git subjects can't contain newlines, so
-  // there's no ambiguity. First space splits hash from subject.
+  // Split on newlines (subjects can't contain newlines), then split
+  // each line on the field separator into hash, committer, subject.
   return log
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => {
-      const spaceIdx = line.indexOf(' ');
-      if (spaceIdx === -1) return { hash: line, subject: '' };
-      return {
-        hash: line.slice(0, spaceIdx),
-        subject: line.slice(spaceIdx + 1),
-      };
+      const [hash = '', committer = '', subject = ''] = line.split(FIELD_SEP);
+      return { hash, committer, subject };
     });
 }
 
@@ -152,7 +162,18 @@ function main(): void {
   }
 
   const all = getCommitsSinceLastRelease();
-  const real = all.filter((c) => !c.subject.startsWith('chore(release)'));
+  // Filter out workflow-created release commits — but only when BOTH
+  // subject and committer match the bot's signature. A human commit
+  // like `chore(release): bump pnpm/action-setup` (valid Conventional
+  // Commit for a dependency update) would otherwise be silently
+  // excluded from the changelog and the changes it represents would
+  // never appear in release notes.
+  const real = all.filter(
+    (c) => !(
+      c.subject.startsWith('chore(release)') &&
+      c.committer === RELEASE_BOT_NAME
+    ),
+  );
 
   if (real.length === 0) {
     console.log(

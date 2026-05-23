@@ -35,11 +35,22 @@ jobs:
     name: Direct-publish
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Skip the workflow's own chore(release) push commits during the
-    # `push` event. Without this guard, every release commit would
-    # trigger another (no-op) run. workflow_dispatch invocations are
+    # Skip the workflow's own release commits during the `push` event.
+    # Without this guard, every workflow-created release commit would
+    # trigger another (no-op) run. `workflow_dispatch` invocations are
     # never skipped — that's the recovery path.
-    if: ${{ github.event_name == 'workflow_dispatch' || !startsWith(github.event.head_commit.message, 'chore(release):') }}
+    #
+    # Match on subject prefix AND committer identity together. Subject
+    # alone (`chore(release):`) is also a valid human Conventional
+    # Commit — e.g. `chore(release): bump pnpm/action-setup` for a
+    # dependency update. A human-written `chore(release):` commit
+    # filtered out here would never trigger a release for its own
+    # changes, AND would be filtered out of the auto-changeset summary
+    # on the next run (see scripts/auto-changeset.ts) — silently
+    # invisible in release notes. The bot identity is set only by
+    # this workflow's Configure git identity step, so combining the
+    # two prevents human commits from accidentally matching.
+    if: ${{ github.event_name == 'workflow_dispatch' || !(startsWith(github.event.head_commit.message, 'chore(release):') && github.event.head_commit.committer.name == 'have-release-bot') }}
     steps:
       # Mint a token from the HAVE_RELEASE GitHub App (org-wide secret
       # pair). Used as GITHUB_TOKEN (for the chore(release) push back to
@@ -323,16 +334,24 @@ jobs:
           # marker for "commit was created by the auto release path".
           if ! printf '%s' "$HEAD_MSG" | grep -q '^chore(release): bump ' \
             || [ "$HEAD_COMMITTER" != "have-release-bot" ]; then
-            # Escape `%`, CR, LF before embedding user-controlled commit
-            # subject in a workflow command — per GitHub's
+            # Escape `%`, CR, LF before embedding user-controlled
+            # git metadata in workflow commands — per GitHub's
             # workflow-commands docs, those bytes can corrupt the
-            # command payload or inject additional commands.
-            HEAD_MSG_ESCAPED="${HEAD_MSG//%/%25}"
-            HEAD_MSG_ESCAPED="${HEAD_MSG_ESCAPED//$'\r'/%0D}"
-            HEAD_MSG_ESCAPED="${HEAD_MSG_ESCAPED//$'\n'/%0A}"
+            # command payload or inject additional commands. Git
+            # accepts CR/LF in committer names (verified empirically),
+            # so both HEAD_MSG and HEAD_COMMITTER need escaping.
+            escape_wc() {
+              local s="$1"
+              s="${s//%/%25}"
+              s="${s//$'\r'/%0D}"
+              s="${s//$'\n'/%0A}"
+              printf '%s' "$s"
+            }
+            HEAD_MSG_ESCAPED=$(escape_wc "$HEAD_MSG")
+            HEAD_COMMITTER_ESCAPED=$(escape_wc "$HEAD_COMMITTER")
             echo "::error::Recovery requires HEAD to be a 'chore(release): bump …' commit by have-release-bot."
             echo "::error::HEAD subject: $HEAD_MSG_ESCAPED"
-            echo "::error::HEAD committer: $HEAD_COMMITTER"
+            echo "::error::HEAD committer: $HEAD_COMMITTER_ESCAPED"
             echo "::error::If the failed release commit is no longer at HEAD, resolve manually — do not use this recovery path."
             exit 1
           fi
