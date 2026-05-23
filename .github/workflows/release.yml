@@ -115,12 +115,28 @@ jobs:
             # partially failed and left an untagged bump commit.
             UNTAGGED_RANGE="HEAD"
           fi
-          # `git log --grep` matches the entire commit message including
-          # body, so a regular commit whose body documents the literal
-          # string `chore(release): bump ...` (e.g. as a code example
-          # in PR description) would false-positive. Pipe subjects
-          # through awk to filter against the SUBJECT line only.
-          UNTAGGED_RELEASE=$(git log "$UNTAGGED_RANGE" --pretty='%H %s' \
+          # Subject + committer identity together — subject alone is
+          # ambiguous because a human commit like `chore(release):
+          # bump pnpm/action-setup` is a valid Conventional Commit
+          # that matches the bump pattern but is NOT a failed release
+          # (it's a dependency-bump chore). On its own push it's
+          # skipped by the job-level chore(release) filter; the NEXT
+          # push then hits this detector, exits 1, no boundary
+          # advances, and every future release deadlocks until an
+          # operator manually fixes it.
+          #
+          # The bot identity (`have-release-bot`, set above) is set
+          # only by THIS workflow. Filtering by both subject AND
+          # committer means only workflow-created commits can trip
+          # the detector — human authors can't accidentally produce
+          # the marker even with a matching subject.
+          #
+          # `git log --grep` would match commit bodies (subject +
+          # body), not just subjects, so we use `--committer` for
+          # identity but pipe `%s` through awk for subject matching.
+          UNTAGGED_RELEASE=$(git log "$UNTAGGED_RANGE" \
+            --committer='have-release-bot' \
+            --pretty='%H %s' \
             | awk '/^[a-f0-9]+ chore\(release\): bump / {print $1; exit}')
           if [ -n "$UNTAGGED_RELEASE" ]; then
             echo "::error::Found untagged chore(release): bump commit $UNTAGGED_RELEASE in range $UNTAGGED_RANGE."
@@ -297,7 +313,16 @@ jobs:
           # `refs/remotes/origin/main` under all configurations.
           git fetch origin +refs/heads/main:refs/remotes/origin/main
           HEAD_MSG=$(git log -1 --pretty=%s HEAD)
-          if ! printf '%s' "$HEAD_MSG" | grep -q '^chore(release): bump '; then
+          HEAD_COMMITTER=$(git log -1 --pretty=%cn HEAD)
+          # Check subject AND committer identity. Subject alone is
+          # ambiguous: `chore(release): bump pnpm/action-setup` is a
+          # legit human conventional commit that would otherwise pass
+          # this guard and reach `pnpm changeset:publish` against the
+          # wrong source tree. The bot identity is set only by this
+          # workflow's auto step, so it's a reliable machine-only
+          # marker for "commit was created by the auto release path".
+          if ! printf '%s' "$HEAD_MSG" | grep -q '^chore(release): bump ' \
+            || [ "$HEAD_COMMITTER" != "have-release-bot" ]; then
             # Escape `%`, CR, LF before embedding user-controlled commit
             # subject in a workflow command — per GitHub's
             # workflow-commands docs, those bytes can corrupt the
@@ -305,7 +330,9 @@ jobs:
             HEAD_MSG_ESCAPED="${HEAD_MSG//%/%25}"
             HEAD_MSG_ESCAPED="${HEAD_MSG_ESCAPED//$'\r'/%0D}"
             HEAD_MSG_ESCAPED="${HEAD_MSG_ESCAPED//$'\n'/%0A}"
-            echo "::error::Recovery requires HEAD to be a 'chore(release): bump …' commit. HEAD subject is: $HEAD_MSG_ESCAPED"
+            echo "::error::Recovery requires HEAD to be a 'chore(release): bump …' commit by have-release-bot."
+            echo "::error::HEAD subject: $HEAD_MSG_ESCAPED"
+            echo "::error::HEAD committer: $HEAD_COMMITTER"
             echo "::error::If the failed release commit is no longer at HEAD, resolve manually — do not use this recovery path."
             exit 1
           fi
