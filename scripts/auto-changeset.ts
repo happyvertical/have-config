@@ -12,9 +12,19 @@
  * see in the changelog.
  *
  * Bump rules for 0.x.x releases (everything stays pre-1.0):
- * - Any commit with `!` after type/scope, or `BREAKING CHANGE` in the
- *   subject → minor bump
+ * - Any commit with `!` after type/scope, or `BREAKING CHANGE` /
+ *   `BREAKING-CHANGE` in the subject OR body → minor bump
  * - All other commits (including `docs:`, `chore:`, `ci:`) → patch bump
+ *
+ * Body inspection matters: the Conventional Commits spec puts breaking
+ * markers in a footer, e.g.
+ *
+ *   feat: change config shape
+ *
+ *   BREAKING CHANGE: consumers must update their extends path
+ *
+ * Subject-only inspection would classify this as a patch and ship a
+ * breaking change under a patch version. We scan the body too.
  *
  * `chore(release):` commits are filtered out — they're the workflow's
  * own version-bump commits and including them would re-bump on the
@@ -35,7 +45,13 @@ const PACKAGES = [
 interface Commit {
   hash: string;
   subject: string;
+  body: string;
 }
+
+// Sentinel between commit fields and between commits, picked to be
+// vanishingly unlikely in real commit text.
+const FIELD_SEP = '\x00FIELD\x00';
+const COMMIT_SEP = '\x00COMMIT\x00';
 
 /**
  * Run a git subcommand with args passed positionally. Uses execFileSync
@@ -74,17 +90,19 @@ function getLastReleaseTag(): string | null {
 function getCommitsSinceLastRelease(): Commit[] {
   const lastTag = getLastReleaseTag();
   const range = lastTag ? `${lastTag}..HEAD` : 'HEAD';
-  const log = git(
-    'log',
-    range,
-    '--pretty=format:%H|||%s',
-    '--no-merges',
-  );
+  // Include body via %b so we can detect BREAKING CHANGE: footers.
+  // Use unlikely sentinels because bodies contain newlines and pipes.
+  const format = `%H${FIELD_SEP}%s${FIELD_SEP}%b${COMMIT_SEP}`;
+  const log = git('log', range, `--pretty=format:${format}`, '--no-merges');
   if (!log) return [];
-  return log.split('\n').map((line) => {
-    const [hash, ...subjectParts] = line.split('|||');
-    return { hash: hash ?? '', subject: subjectParts.join('|||') };
-  });
+  return log
+    .split(COMMIT_SEP)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [hash = '', subject = '', body = ''] = entry.split(FIELD_SEP);
+      return { hash, subject, body };
+    });
 }
 
 function hasManualChangesets(): boolean {
@@ -101,11 +119,13 @@ function hasManualChangesets(): boolean {
 function isBreaking(commit: Commit): boolean {
   // `type!: ...` or `type(scope)!: ...`
   if (/^[a-z]+(\([^)]+\))?!:/.test(commit.subject)) return true;
-  // `BREAKING CHANGE:` in subject. Body inspection would be more
-  // complete but `git log --format=%s` only gives subjects; relying on
-  // the convention of putting BREAKING CHANGE in the subject when
-  // authors mean it.
-  if (/\bBREAKING CHANGE\b/.test(commit.subject)) return true;
+  // `BREAKING CHANGE:` or `BREAKING-CHANGE:` in the subject OR body.
+  // The Conventional Commits spec places these in a footer, so the
+  // body check is the canonical case; subject check catches the (less
+  // common) inline form.
+  const breakingPattern = /\bBREAKING[- ]CHANGE\b/;
+  if (breakingPattern.test(commit.subject)) return true;
+  if (breakingPattern.test(commit.body)) return true;
   return false;
 }
 
