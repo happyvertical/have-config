@@ -52,13 +52,18 @@ const GIT_PRETTY_FORMAT = `%H %s`;
 
 /**
  * Run a git subcommand with args passed positionally. Uses execFileSync
- * so no shell parsing occurs. Returns trimmed stdout, or empty string
- * when git itself exits non-zero (e.g. `git describe` with no tags).
+ * so no shell parsing occurs. Returns trimmed stdout.
  *
- * Surfaces non-git errors (invalid argv, missing binary, etc.) by
- * logging to stderr and returning empty — we don't want a typo in our
- * own format string to look like "no commits" and silently skip a
- * release. Caller should treat empty as "no output" but log if needed.
+ * Two failure modes are distinguished:
+ * - Git exited non-zero (e.g. `describe --tags` with no tags exists).
+ *   Returns empty string; callers treat empty as "no output".
+ * - Node-level failure (invalid argv, binary missing, spawn error).
+ *   This indicates a bug in OUR code, not git's expected behaviour,
+ *   so we throw to fail the workflow loudly. The previous "log and
+ *   return empty" path made a typo in our own format string look
+ *   identical to "no commits since last release" — auto-changeset
+ *   would silently skip the run and the workflow would go green
+ *   without producing a release.
  */
 function git(...args: string[]): string {
   try {
@@ -67,13 +72,17 @@ function git(...args: string[]): string {
       stdio: ['pipe', 'pipe', 'pipe'],
     }).trim();
   } catch (err) {
-    // Git returning non-zero is expected for some calls (describe with
-    // no tags). But Node-level errors (NUL in args, binary not found,
-    // etc.) indicate our bug, not git's — surface them.
     const e = err as { status?: number | null; code?: string; message?: string };
     if (e.status === undefined || e.status === null) {
-      console.error(`auto-changeset: git ${args.join(' ')} failed: ${e.code ?? e.message ?? err}`);
+      // Node-level error — re-throw to fail loudly. We never want
+      // this swallowed; an empty return here would let the caller
+      // proceed as if git succeeded with no output.
+      throw new Error(
+        `auto-changeset: git ${args.join(' ')} failed at Node level: ${e.code ?? e.message ?? err}`,
+      );
     }
+    // Git's own non-zero exit — expected for `describe --tags`
+    // when no tags exist, etc. Empty output signals that.
     return '';
   }
 }

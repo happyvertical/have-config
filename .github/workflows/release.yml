@@ -98,16 +98,21 @@ jobs:
           #    CHANGELOG.md entries + deletes consumed .changeset/*.md.
           pnpm changeset:version
 
-          # 3. Gate on whether anything actually changed. Using the
-          #    working tree (not a single package's version) catches
-          #    every case: auto-generated bumps to all packages,
-          #    manual changesets that bump only one package, no-op
-          #    runs where nothing was releasable. Avoids the
-          #    single-package gate trap (manual changeset for only
-          #    prettier-config would have skipped publish under the
-          #    old eslint-only check).
-          if git diff --quiet && git diff --cached --quiet; then
-            echo "No releasable changes after changeset:version — nothing to publish."
+          # 3. Gate on whether any package.json version actually
+          #    changed. Scoping the diff to `packages/*/package.json`
+          #    (rather than the whole working tree) catches both:
+          #    - subset bumps (manual changeset for only one package
+          #      bumps that one's package.json; the old single-package
+          #      gate for eslint-config would have skipped)
+          #    - empty changesets (a manual `---\n---` changeset
+          #      causes `changeset version` to delete the file but
+          #      not bump any package.json; a working-tree-wide gate
+          #      would have committed the deletion + run publish as
+          #      a no-op + advanced no tag, leaving the next auto
+          #      run to re-include the same commits)
+          if git diff --quiet -- 'packages/*/package.json' \
+            && git diff --cached --quiet -- 'packages/*/package.json'; then
+            echo "No package.json bumps after changeset:version — nothing to publish."
             exit 0
           fi
 
