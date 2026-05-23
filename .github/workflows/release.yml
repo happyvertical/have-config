@@ -91,7 +91,7 @@ jobs:
           set -euo pipefail
 
           # 0. Refuse to start if a previous release didn't complete
-          #    its tag push. Symptom: an unreleased `chore(release):`
+          #    its tag push. Symptom: an untagged `chore(release): bump`
           #    commit sits between the last `@happyvertical/*@*` tag
           #    and HEAD. If we proceeded, `auto-changeset` would scan
           #    `LAST_TAG..HEAD`, filter out the chore commit, and
@@ -100,11 +100,18 @@ jobs:
           #    entries. Operator resolution: hand-push the missing
           #    per-package tags for the already-published versions,
           #    then re-run this workflow.
+          #
+          #    Detector intentionally narrowed to `bump ` (the
+          #    version-bump message format). The cleanup path below
+          #    creates `chore(release): clean up consumed no-op
+          #    changesets` commits which are NOT failed releases —
+          #    matching them here would self-block every future run
+          #    after any no-op cleanup ever lands on main.
           LAST_PKG_TAG=$(git tag --list '@happyvertical/*@*' --sort=-creatordate | head -1 || true)
           if [ -n "$LAST_PKG_TAG" ]; then
-            UNTAGGED_RELEASE=$(git log "$LAST_PKG_TAG..HEAD" --pretty=%H --grep='^chore(release):' | head -1)
+            UNTAGGED_RELEASE=$(git log "$LAST_PKG_TAG..HEAD" --pretty=%H --grep='^chore(release): bump ' | head -1)
             if [ -n "$UNTAGGED_RELEASE" ]; then
-              echo "::error::Found untagged chore(release): commit $UNTAGGED_RELEASE since last per-package tag $LAST_PKG_TAG."
+              echo "::error::Found untagged chore(release): bump commit $UNTAGGED_RELEASE since last per-package tag $LAST_PKG_TAG."
               echo "::error::This indicates the previous release published packages but failed to push tags. Resolve manually: push the missing per-package tags for the published versions, then re-run."
               exit 1
             fi
