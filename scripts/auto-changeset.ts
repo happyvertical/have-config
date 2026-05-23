@@ -139,13 +139,19 @@ function hasManualChangesets(): boolean {
 function isBreaking(commit: Commit): boolean {
   // `type!: ...` or `type(scope)!: ...`
   if (/^[a-z]+(\([^)]+\))?!:/.test(commit.subject)) return true;
-  // `BREAKING CHANGE:` or `BREAKING-CHANGE:` in the subject OR body.
-  // The Conventional Commits spec places these in a footer, so the
-  // body check is the canonical case; subject check catches the (less
-  // common) inline form.
-  const breakingPattern = /\bBREAKING[- ]CHANGE\b/;
-  if (breakingPattern.test(commit.subject)) return true;
-  if (breakingPattern.test(commit.body)) return true;
+  // Per Conventional Commits spec, `BREAKING CHANGE:` (or
+  // `BREAKING-CHANGE:`) is a footer line — at the start of its own
+  // line, followed by `: `. Anchoring with `^…: ` (multiline) is
+  // required to avoid false positives from narrative or docstring
+  // mentions of the literal phrase. Without this anchor, a body that
+  // SHOWS a `BREAKING CHANGE:` example (like this script's own
+  // top-of-file JSDoc, or any commit explaining what a breaking-change
+  // footer is) would silently force a minor bump.
+  const footerPattern = /^BREAKING[- ]CHANGE: /m;
+  if (footerPattern.test(commit.body)) return true;
+  // Catch the same footer accidentally written in the subject line.
+  // Rare but unambiguous intent — treat it as breaking.
+  if (/^BREAKING[- ]CHANGE: /.test(commit.subject)) return true;
   return false;
 }
 
