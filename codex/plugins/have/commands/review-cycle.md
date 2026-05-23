@@ -252,73 +252,67 @@ commit (or run reviewers in a disposable worktree).
 
 For reviews of **uncommitted/dirty work** (e.g. mid-edit review,
 `codex review --uncommitted` flows): the simple "is status empty"
-check fails because the tree was already dirty. Two options:
+check fails because the tree was already dirty. Use **snapshot
+comparison** — it's the only approach with no footguns:
 
-1. **Snapshot comparison** (recommended — no footguns):
-   capture `git status --porcelain`, `git diff` (unstaged),
-   `git diff --cached` (staged/index), and untracked-file
-   content hashes BEFORE each reviewer; capture again AFTER;
-   diff the two captures. Any difference (added/removed/modified
-   files OR same-status-but-different-content like `M path →
-   M path` with different bytes, OR index state changes) means
-   the reviewer mutated state.
+```bash
+# BEFORE each reviewer runs
+SNAPSHOT_DIR=$(mktemp -d)
+git status --porcelain > "$SNAPSHOT_DIR/pre-status.txt"
+git diff > "$SNAPSHOT_DIR/pre-unstaged.diff"
+git diff --cached > "$SNAPSHOT_DIR/pre-staged.diff"
+# Capture untracked file contents (hash + path) so we can detect
+# if a reviewer added/modified untracked files. `git status` would
+# catch added/removed but not same-name-different-content edits.
+git ls-files --others --exclude-standard -z \
+  | xargs -0 -I{} sh -c 'printf "%s  %s\n" "$(git hash-object "{}")" "{}"' \
+  | sort > "$SNAPSHOT_DIR/pre-untracked.txt"
 
-   Preserves your staging discipline exactly, doesn't include
-   unrelated untracked files in any commit, doesn't drop or
-   rewrite any commits.
+# ... run the reviewer ...
 
-2. **WIP commit before reviewing** (manual-friendly alternative
-   — has sharp edges, read all caveats first):
+# AFTER — capture same shape, diff against pre-state
+git status --porcelain > "$SNAPSHOT_DIR/post-status.txt"
+git diff > "$SNAPSHOT_DIR/post-unstaged.diff"
+git diff --cached > "$SNAPSHOT_DIR/post-staged.diff"
+git ls-files --others --exclude-standard -z \
+  | xargs -0 -I{} sh -c 'printf "%s  %s\n" "$(git hash-object "{}")" "{}"' \
+  | sort > "$SNAPSHOT_DIR/post-untracked.txt"
 
-   ```bash
-   # Capture pre-state so we can restore staging discipline
-   git rev-parse HEAD > /tmp/pre-wip-head
-   git diff --cached > /tmp/pre-wip-staged.patch
-   git diff > /tmp/pre-wip-unstaged.patch
-   # Decide what gets reviewed — DON'T use `git add -A` blindly
-   # (it stages unrelated untracked files which then end up in
-   # `pr-review --base`'s diff sent to external reviewers).
-   # Use explicit pathspecs:
-   git add path/to/intended/files
-   WIP_SHA=$(git commit -m "wip: review snapshot" && git rev-parse HEAD)
-   # ... run reviewers (they see the WIP commit) ...
-   # Restore — verify HEAD didn't move, then identifier-check,
-   # then undo. This is the Hard Rules destructive-cleanup
-   # carve-out (`git reset` is normally prohibited; permitted
-   # here ONLY for undoing this script's own WIP commit).
-   if [ "$(git rev-parse HEAD)" != "$WIP_SHA" ]; then
-     echo "HEAD moved during review — refusing to auto-undo WIP"
-     exit 1
-   fi
-   git log -1 --format=%s | grep -q '^wip: review snapshot' || {
-     echo "HEAD is not the WIP commit"; exit 1
-   }
-   git reset --hard "$(cat /tmp/pre-wip-head)"
-   git apply --cached /tmp/pre-wip-staged.patch
-   git apply /tmp/pre-wip-unstaged.patch
-   ```
+if ! diff -q "$SNAPSHOT_DIR/pre-status.txt" "$SNAPSHOT_DIR/post-status.txt" >/dev/null \
+  || ! diff -q "$SNAPSHOT_DIR/pre-unstaged.diff" "$SNAPSHOT_DIR/post-unstaged.diff" >/dev/null \
+  || ! diff -q "$SNAPSHOT_DIR/pre-staged.diff" "$SNAPSHOT_DIR/post-staged.diff" >/dev/null \
+  || ! diff -q "$SNAPSHOT_DIR/pre-untracked.txt" "$SNAPSHOT_DIR/post-untracked.txt" >/dev/null; then
+  echo "Reviewer mutated tree state — round invalid. See $SNAPSHOT_DIR for diffs."
+  exit 1
+fi
+rm -rf "$SNAPSHOT_DIR"
+```
 
-   Caveats — why the snapshot path is recommended over this:
-   - **DON'T `git stash`** as a shortcut: stash REMOVES changes
-     from the worktree, so reviewers run against the pre-WIP
-     tree (the wrong state).
-   - **DON'T `git add -A`** blindly: it stages unrelated
-     untracked files (`.copilot-session-*.md`, scratch notes,
-     etc.) which end up in the WIP commit AND in `pr-review`'s
-     diff sent to external reviewers — potential local-data
-     leak.
-   - **DON'T `git reset --mixed HEAD~1`** without identifier-
-     check: `HEAD~1` is positional. If HEAD moved during the
-     review (an interrupted run, a stray amend, an Agent-tool
-     side commit), `HEAD~1` is not your WIP commit and the
-     reset silently drops the wrong commit. Verify with
-     `git rev-parse HEAD == $WIP_SHA` AND the commit subject
-     match BEFORE the reset.
-   - **The `git reset` calls above are Hard Rules destructive-
-     cleanup commands**. They're permitted here ONLY as part
-     of this script's own WIP-undo dance with the verify-then-
-     reset shape shown. Don't reach for `git reset --hard` or
-     `git reset --mixed` outside this carve-out.
+This catches:
+- Added/removed tracked files (status diff)
+- Modified tracked files even if status shape unchanged
+  (e.g. `M path → M path` with different bytes — unstaged.diff
+  catches this; status alone wouldn't)
+- Staged/index mutations (staged.diff)
+- Added/removed untracked files OR same-name-different-content
+  (untracked hash list)
+
+Preserves your staging discipline exactly, doesn't touch any
+commits, no WIP dance, no `git reset` calls (so Hard Rules don't
+need a carve-out).
+
+Why not WIP-commit-then-undo (which an earlier draft of this doc
+suggested): that approach accumulated multiple footguns across
+rounds — `git add -A` would leak unrelated untracked files into
+`pr-review`'s diff; `git stash` would actually remove dirty changes
+from the worktree and review the wrong state; `git reset --mixed
+HEAD~1` would silently drop the wrong commit if HEAD moved; the
+patch-capture-and-restore step couldn't recreate untracked files
+deleted by `reset --hard`; `wip:` isn't a valid Conventional Commit
+type and would be rejected by commitlint in any repo using these
+configs (which is the whole org). The snapshot approach sidesteps
+every one of these. If you find yourself reaching for WIP commits
+to make this work, you're solving the wrong problem.
 
 Either way, never just "is `git status` clean now" as the
 post-check — that only works when "clean" was the baseline.
