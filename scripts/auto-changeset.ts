@@ -48,15 +48,27 @@ interface Commit {
   body: string;
 }
 
-// Sentinel between commit fields and between commits, picked to be
-// vanishingly unlikely in real commit text.
-const FIELD_SEP = '\x00FIELD\x00';
-const COMMIT_SEP = '\x00COMMIT\x00';
+// Field/record separators for parsing `git log` output. We need bytes
+// that won't appear in commit subjects or bodies and that don't break
+// Node's child_process argv handling. Git's `%x<hex>` pretty-format
+// escape emits the byte in the OUTPUT without requiring us to put it
+// in the argv (which would fail — Node rejects NUL bytes in args, and
+// even non-NUL control bytes in argv are awkward). We use ASCII 31
+// (Unit Separator) between fields and ASCII 30 (Record Separator)
+// between commits — neither appears in real commit text.
+const FIELD_SEP_OUT = '\x1f';
+const COMMIT_SEP_OUT = '\x1e';
+const GIT_PRETTY_FORMAT = `%H%x1f%s%x1f%b%x1e`;
 
 /**
  * Run a git subcommand with args passed positionally. Uses execFileSync
- * so no shell parsing occurs. Returns trimmed stdout, or empty string on
- * non-zero exit (e.g. `git describe` with no tags yet).
+ * so no shell parsing occurs. Returns trimmed stdout, or empty string
+ * when git itself exits non-zero (e.g. `git describe` with no tags).
+ *
+ * Surfaces non-git errors (invalid argv, missing binary, etc.) by
+ * logging to stderr and returning empty — we don't want a typo in our
+ * own format string to look like "no commits" and silently skip a
+ * release. Caller should treat empty as "no output" but log if needed.
  */
 function git(...args: string[]): string {
   try {
@@ -64,7 +76,14 @@ function git(...args: string[]): string {
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
     }).trim();
-  } catch {
+  } catch (err) {
+    // Git returning non-zero is expected for some calls (describe with
+    // no tags). But Node-level errors (NUL in args, binary not found,
+    // etc.) indicate our bug, not git's — surface them.
+    const e = err as { status?: number | null; code?: string; message?: string };
+    if (e.status === undefined || e.status === null) {
+      console.error(`auto-changeset: git ${args.join(' ')} failed: ${e.code ?? e.message ?? err}`);
+    }
     return '';
   }
 }
@@ -90,17 +109,18 @@ function getLastReleaseTag(): string | null {
 function getCommitsSinceLastRelease(): Commit[] {
   const lastTag = getLastReleaseTag();
   const range = lastTag ? `${lastTag}..HEAD` : 'HEAD';
-  // Include body via %b so we can detect BREAKING CHANGE: footers.
-  // Use unlikely sentinels because bodies contain newlines and pipes.
-  const format = `%H${FIELD_SEP}%s${FIELD_SEP}%b${COMMIT_SEP}`;
-  const log = git('log', range, `--pretty=format:${format}`, '--no-merges');
+  // %x1f / %x1e are git pretty-format escapes that emit ASCII 31 / 30
+  // in the OUTPUT. We don't put those bytes in argv (Node rejects NUL
+  // bytes there, and embedding raw control bytes is brittle); git
+  // expands them when generating the log.
+  const log = git('log', range, `--pretty=format:${GIT_PRETTY_FORMAT}`, '--no-merges');
   if (!log) return [];
   return log
-    .split(COMMIT_SEP)
+    .split(COMMIT_SEP_OUT)
     .map((entry) => entry.trim())
     .filter(Boolean)
     .map((entry) => {
-      const [hash = '', subject = '', body = ''] = entry.split(FIELD_SEP);
+      const [hash = '', subject = '', body = ''] = entry.split(FIELD_SEP_OUT);
       return { hash, subject, body };
     });
 }

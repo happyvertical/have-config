@@ -4,6 +4,23 @@ on:
   push:
     branches:
       - main
+  # Recovery path for partial publish failures. If `pnpm
+  # changeset:publish` fails after the version commit was already
+  # pushed (network glitch, registry outage, transient auth), the
+  # version bump is on main but packages aren't published. Re-running
+  # this workflow via the push event would either be skipped by the
+  # chore(release) guard or hit the main-advanced check. Operators
+  # can instead trigger `workflow_dispatch` with mode=publish-only to
+  # check out current main and run just `changeset publish`.
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'release flow mode'
+        type: choice
+        options:
+          - auto         # normal: auto-changeset → version → commit → push → publish
+          - publish-only # recovery: skip auto-changeset and version; just publish from current main
+        default: auto
 
 concurrency:
   group: release-${{ github.ref }}
@@ -18,11 +35,11 @@ jobs:
     name: Direct-publish
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Skip the workflow's own chore(release) commits. Without this guard,
-    # every release commit would trigger another (no-op) run. The
-    # auto-changeset script would catch it too, but skipping at job level
-    # saves the runner.
-    if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
+    # Skip the workflow's own chore(release) push commits during the
+    # `push` event. Without this guard, every release commit would
+    # trigger another (no-op) run. workflow_dispatch invocations are
+    # never skipped — that's the recovery path.
+    if: ${{ github.event_name == 'workflow_dispatch' || !startsWith(github.event.head_commit.message, 'chore(release):') }}
     steps:
       # Mint a token from the HAVE_RELEASE GitHub App (org-wide secret
       # pair). Used as GITHUB_TOKEN (for the chore(release) push back to
@@ -65,6 +82,7 @@ jobs:
           git config user.email "have-release[bot]@users.noreply.github.com"
 
       - name: Auto-changeset, version, commit, push, then publish
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.mode == 'auto' }}
         env:
           GITHUB_TOKEN: ${{ steps.token.outputs.token }}
           NODE_AUTH_TOKEN: ${{ steps.token.outputs.token }}
@@ -125,9 +143,35 @@ jobs:
           #    creates per-package git tags (e.g.
           #    `@happyvertical/eslint-config@0.2.0`). If publish
           #    partially fails, the commit is already on main so
-          #    state is at least consistent; manual rerun of publish
-          #    can recover (idempotent for already-published versions).
+          #    state is at least consistent. Recovery: re-trigger this
+          #    workflow with workflow_dispatch + mode=publish-only.
+          #    Versions already published are idempotent under
+          #    `changeset publish`.
           pnpm changeset:publish
 
           # 7. Push the per-package tags created by changeset:publish.
+          git push --tags origin main
+
+      - name: Publish only (recovery from partial publish failure)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'publish-only' }}
+        env:
+          GITHUB_TOKEN: ${{ steps.token.outputs.token }}
+          NODE_AUTH_TOKEN: ${{ steps.token.outputs.token }}
+          NPM_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          set -euo pipefail
+
+          # Recovery path: a previous auto run committed + pushed the
+          # version bump but `changeset publish` failed before
+          # completing (network glitch, registry outage). We're now
+          # on current main, which contains the unpublished version
+          # bumps. Run publish only — no auto-changeset, no
+          # changeset:version (those already happened on the failed
+          # run). `changeset publish` is idempotent for versions
+          # already on the registry; it only attempts unpublished
+          # versions.
+          echo "Recovery mode: running changeset:publish against current main."
+          pnpm changeset:publish
+
+          # Push any tags created by the publish.
           git push --tags origin main
