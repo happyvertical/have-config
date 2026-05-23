@@ -115,7 +115,13 @@ jobs:
             # partially failed and left an untagged bump commit.
             UNTAGGED_RANGE="HEAD"
           fi
-          UNTAGGED_RELEASE=$(git log "$UNTAGGED_RANGE" --pretty=%H --grep='^chore(release): bump ' | head -1)
+          # `git log --grep` matches the entire commit message including
+          # body, so a regular commit whose body documents the literal
+          # string `chore(release): bump ...` (e.g. as a code example
+          # in PR description) would false-positive. Pipe subjects
+          # through awk to filter against the SUBJECT line only.
+          UNTAGGED_RELEASE=$(git log "$UNTAGGED_RANGE" --pretty='%H %s' \
+            | awk '/^[a-f0-9]+ chore\(release\): bump / {print $1; exit}')
           if [ -n "$UNTAGGED_RELEASE" ]; then
             echo "::error::Found untagged chore(release): bump commit $UNTAGGED_RELEASE in range $UNTAGGED_RANGE."
             echo "::error::The previous release left an unfinished state — either changeset:publish or the tag push failed before completing."
@@ -246,19 +252,30 @@ jobs:
           # versions.
 
           # Guard: refuse to publish unless HEAD is the failed release's
-          # `chore(release):` commit AND nothing new has landed on
-          # origin/main. Without this, recovery could publish stale
+          # `chore(release): bump …` commit AND nothing new has landed
+          # on origin/main. Without this, recovery could publish stale
           # version numbers from `R` (the failed release commit) with
           # the source tree of any later commit `N` that landed in the
           # meantime — the registry artifact would silently contain
           # post-version-commit code. Recovery is only safe immediately
           # after a failed publish, before any new commits land.
+          #
+          # Pattern is narrowed to `bump ` specifically. The auto path
+          # creates two flavours of chore(release): commit — the actual
+          # version bump (`chore(release): bump <pkgs>`) and the no-op
+          # cleanup (`chore(release): clean up consumed no-op
+          # changesets`). Only the bump variant is a valid recovery
+          # target; running publish-only with the cleanup commit at
+          # HEAD would call `changeset tag` against a commit that
+          # doesn't actually contain version bumps, pinning tags to
+          # the wrong SHA.
+          #
           # Explicit destination refspec — see auto path above for why
           # `git fetch origin main` alone is not reliable for updating
           # `refs/remotes/origin/main` under all configurations.
           git fetch origin +refs/heads/main:refs/remotes/origin/main
           HEAD_MSG=$(git log -1 --pretty=%s HEAD)
-          if ! printf '%s' "$HEAD_MSG" | grep -q '^chore(release):'; then
+          if ! printf '%s' "$HEAD_MSG" | grep -q '^chore(release): bump '; then
             # Escape `%`, CR, LF before embedding user-controlled commit
             # subject in a workflow command — per GitHub's
             # workflow-commands docs, those bytes can corrupt the
@@ -266,7 +283,7 @@ jobs:
             HEAD_MSG_ESCAPED="${HEAD_MSG//%/%25}"
             HEAD_MSG_ESCAPED="${HEAD_MSG_ESCAPED//$'\r'/%0D}"
             HEAD_MSG_ESCAPED="${HEAD_MSG_ESCAPED//$'\n'/%0A}"
-            echo "::error::Recovery requires HEAD to be a chore(release): commit. HEAD subject is: $HEAD_MSG_ESCAPED"
+            echo "::error::Recovery requires HEAD to be a 'chore(release): bump …' commit. HEAD subject is: $HEAD_MSG_ESCAPED"
             echo "::error::If the failed release commit is no longer at HEAD, resolve manually — do not use this recovery path."
             exit 1
           fi
