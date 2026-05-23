@@ -6,14 +6,20 @@ description: Run a repeatable review/fix/retest loop over current work, optional
 
 Run a bounded review cycle on the current work independent of shipping. Default to 3 rounds unless the user passes `rounds=N`.
 
-The parent agent running this command is **Claude Code**. The command orchestrates three *independent* reviewer subprocesses — Codex, a separate Claude print-mode invocation, and GitHub Copilot — and merges their findings. Different models have different blind spots; the ensemble catches more than any single tool.
+The parent agent running this command is **Claude Code**. The command orchestrates a **4-reviewer ensemble**: three independent reviewer subprocesses — codex-cli, a separate claude-cli invocation, and GitHub copilot-cli — plus the orchestrator's own explicit checklist pass against the same commit. Different models have different blind spots; the ensemble catches more than any single tool.
+
+The claude-cli reviewer can be invoked two ways:
+- **Preferred**: `claude -p "<prompt>"` as a subprocess (when OAuth from the parent session works — requires a long-lived token via `claude setup-token`, or `ANTHROPIC_API_KEY` set).
+- **Fallback when OAuth fails**: a fresh claude sub-agent via the parent's Agent tool, with the same review prompt. Same independence property (the sub-agent has no context from the parent conversation) and no OAuth gymnastics. Use the `general-purpose` sub-agent type with the pr-review prompt.
+
+The orchestrator's own pass is NOT silent-solo — it must be an explicit checklist run against the staged/committed diff, with findings written out in the same JSON shape the subprocesses produce. "I looked, it's fine" is not a review; an enumerated set of P0/P1/P2/P3 findings (including "no findings") is.
 
 ## Hard Rules
 
 - Respect the global worktree isolation policy before making edits. If the current checkout is a primary checkout such as `/Users/will/Work/.../repos/...`, move the work to a dedicated worktree and branch before editing, preferably under `/Users/will/.claude/worktrees/` with a `claude/` branch prefix.
 - Do not mix this session's edits with unrelated dirty files. Preserve user changes, and ask only when the current work cannot be separated safely.
 - Do not use destructive cleanup commands such as `git reset --hard`, `git checkout --`, or `git clean` unless the user explicitly asks for that exact destructive action.
-- Do not use `claude ultrareview` or any `ultrareview` variant for the Claude reviewer subprocess. Use the normal Claude CLI in non-interactive print mode (`claude -p`) instead.
+- Do not use `claude ultrareview` or any `ultrareview` variant for the claude-cli reviewer subprocess. Use the normal claude-cli in non-interactive print mode (`claude -p`) instead.
 - Every external review command must be allowed at least 15 minutes. The Claude Bash tool caps a single foreground command at 10 minutes (600000 ms), so for review subprocess invocations: either run them in the background (`run_in_background: true`) and poll with `BashOutput`, or split into shorter chunks. Do not silently truncate a review by hitting the timeout.
 - Treat review output as evidence to verify, not as orders. Fix valid findings. For false positives, record the rationale in the final report.
 - Keep going until the work is clean or the configured review-round cap is reached.
@@ -52,7 +58,7 @@ The parent agent running this command is **Claude Code**. The command orchestrat
    - `codex`
    - `claude`
    - `gh copilot`
-   - `gh` when Copilot is reached through `gh copilot`
+   - `gh` when copilot-cli is reached through `gh copilot`
 7. Read repository instructions and review context in every included repository:
    - nearest `CLAUDE.md`
    - nearest `AGENTS.md` if present
@@ -135,7 +141,7 @@ export PATH="$HOME/pr-review/bin:$PATH"
 
 If the repository being reviewed has no `.pr-review/extensions.md`, the shared core checklist still applies — the prompt just doesn't include repo-specific guidance. That's a signal to consider adding one after the review-cycle run.
 
-### Run Codex review
+### Run codex-cli review
 
 `codex review` fetches its own diff, so pass `--no-diff` to `pr-review` to avoid sending the diff twice:
 
@@ -149,11 +155,11 @@ If the repository being reviewed has no `.pr-review/extensions.md`, the shared c
   ```
 - Do not use `claude ultrareview` or any `ultrareview` variant for any reviewer here.
 
-### Run Claude review (as a subprocess)
+### Run claude-cli review (subprocess preferred, sub-agent fallback)
 
-The parent agent is already Claude — this step invokes a *separate* `claude -p` subprocess so the review pass is independent of the orchestrating session. Don't try to satisfy this step by reasoning inline; spawn the subprocess so the review and the orchestration are genuinely decoupled.
+The parent agent is already Claude Code — this step invokes a *separate* claude reviewer so the review pass is independent of the orchestrating session. Don't try to satisfy this step by reasoning inline as the orchestrator; that's the 4th slot (orchestrator self-review), not the claude reviewer slot.
 
-Claude (the subprocess) does not fetch its own diff — pipe `pr-review` output without `--no-diff`:
+**Preferred: `claude -p` subprocess.** claude-cli (the subprocess) does not fetch its own diff — pipe `pr-review` output without `--no-diff`:
 
 ```bash
 pr-review --base <base> | claude -p --permission-mode plan
@@ -162,29 +168,269 @@ pr-review --base <base> | claude -p --permission-mode plan
 - Use `claude -p` in non-interactive print mode.
 - Prefer read-only/plan permissions for the review run (`--permission-mode plan`).
 - Disallow edit/write tools where supported.
+- Requires `claude -p` to authenticate. From inside a Claude Code parent session, the parent's OAuth typically doesn't propagate to the child — set up a long-lived token via `claude setup-token` (one-time, run in an interactive terminal where browser flow works) and export `CLAUDE_CODE_OAUTH_TOKEN`, OR set `ANTHROPIC_API_KEY` to a key from console.anthropic.com.
 
-### Run Copilot review
+**Fallback when subprocess auth fails: sub-agent via Agent tool.** When `claude -p` returns `Failed to authenticate. API Error: 401` and no long-lived token / API key is available, spawn a fresh Claude sub-agent via the parent's Agent tool. The sub-agent gets the same review prompt, runs with no context from the parent conversation (same independence as the subprocess), and produces findings in the same JSON shape — no OAuth gymnastics.
 
-Copilot also expects the prompt to carry its own context:
+Concrete shape (illustrative — invoke via Claude Code's actual
+Agent tool with these parameter values, not as a literal
+JavaScript call):
 
-```bash
-gh copilot -p "$(pr-review --base <base> --pretty)" --allow-tool 'shell(git)' --allow-tool 'shell(rg)'
+```text
+Agent tool invocation:
+  subagent_type: "general-purpose"
+  description: "PR #N round M claude reviewer"
+  run_in_background: true
+  prompt: <same review prompt the subprocess would have received,
+           with explicit instruction to output the standard
+           {summary, findings: [...], skipped: []} JSON shape>
 ```
 
-- Use `--pretty` so Copilot receives the prompt as readable markdown rather than the JSON-instruction format.
-- If the `gh copilot` syntax has changed, run `gh copilot -- --help` and adapt to the installed CLI.
-- Keep the Copilot run read-only. It may inspect git diff and repository files, but it must not make edits during review.
+Note: the sub-agent is the same model family as the orchestrator (both are Claude), so its blind-spot overlap with the orchestrator's own self-review (4th slot) is high. The independence guarantee it provides is "no shared conversation context"; it does NOT provide "different model family" independence the way the codex-cli or copilot-cli subprocesses do. Treat the sub-agent fallback as a slot-fill of last resort, not equivalence with the subprocess.
 
-### For all three
+### Run copilot-cli review
+
+**This step is non-optional for the "catch before push" intent.** The
+Copilot PR review *bot* only fires after a PR is opened — too late to
+prevent the round-trip the review-cycle exists to compress. The copilot-cli runs locally pre-push and gives you copilot-cli's blind-spot
+coverage before the bot has a chance to comment.
+
+copilot-cli expects the prompt to carry its own context. **The
+invocation must enforce read-only at the permission layer — prompt
+instructions are advisory, tool permissions are enforcement.** If
+copilot-cli can use write/edit-capable tools, a "review" pass can mutate
+the working tree mid-round, breaking the same-commit guarantee the
+loop relies on.
+
+`--allow-all-tools` is *not* read-only — it grants write/edit
+capability and would let the model mutate the working tree mid-review.
+Don't use it. But `--available-tools shell,read` alone *also doesn't
+work* in non-interactive mode — it only filters which tools the model
+can *see*, not which it can run without approval. In `-p` mode there's
+no place to ask for permission, so tool calls get denied with
+`Permission denied and could not request permission from user`. The
+review then runs with no repository context.
+
+The correct shape is **explicit per-command `--allow-tool` flags** for
+the specific read-only commands a review needs. Verify against
+`gh copilot -- --help` and `gh copilot -- help permissions` for the
+syntax your CLI version supports; example for current copilot-cli:
+
+```bash
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+gh copilot -- -p "$(pr-review --base <base> --pretty)" \
+  -C "$REPO_ROOT" \
+  --add-dir "$REPO_ROOT" \
+  --disallow-temp-dir \
+  --allow-tool 'shell(git diff)' \
+  --allow-tool 'shell(git log)' \
+  --allow-tool 'shell(git show)' \
+  --allow-tool 'shell(git status)' \
+  --allow-tool 'shell(git rev-parse)' \
+  --allow-tool 'shell(rg)' \
+  --allow-tool 'shell(cat)' \
+  --allow-tool 'shell(head)' \
+  --effort xhigh
+```
+
+The `-C` / `--add-dir` / `--disallow-temp-dir` trio is **scope
+hygiene**, not a security boundary: they keep the reviewer focused
+on the repo and prevent it from wandering into unrelated files in
+your `/tmp` or wherever else the shell was invoked from. That
+reduces noise in findings — not a vulnerability fix. The reviewer
+is running locally with your credentials and can already see
+anything you can see; that's how local CLI tools work.
+
+**When stricter sandboxing actually matters** (and the above flags
+are insufficient — you need a sanitized temp checkout):
+- Reviewing PRs from untrusted contributors (OSS maintainership)
+  where the diff could contain prompt-injection asking the model to
+  read your `.env` and quote it into findings the contributor sees
+- CI environments where the reviewer runs unattended and findings
+  get auto-posted to public PR comments
+- Workspaces with secrets in untracked files that you don't want
+  surfaced even in your own review output
+
+For the normal HappyVertical case — engineer reviewing their own
+org's PR pre-push, findings going to their own terminal — none of
+that applies. The flags above are enough.
+
+Add `--deny-tool` for any specific commands you want hard-blocked.
+The per-command `--allow-tool` allowlist is **mostly** read-only —
+but it is NOT a hard write-prevention boundary, because copilot-cli
+matches at first-level subcommand granularity. `--allow-tool
+'shell(git diff)'` approves any `git diff …` invocation including
+write-capable forms like `git diff --output=path` which can dirty
+the working tree. Similarly, `shell(rg)` permits redirection-style
+flags depending on shell escaping. The prompt's "don't modify
+files" instruction is defense-in-depth, but the structural
+guarantee for "the reviewer ran against the same commit" is a
+**pre/post tree-snapshot comparison**.
+
+For reviews of **committed work** (the common case): before each
+reviewer, the tree is clean; after, run `git status --porcelain` —
+any output means the reviewer modified the tree, the same-commit
+guarantee is broken, the round is invalid. Restart from the clean
+commit (or run reviewers in a disposable worktree).
+
+For reviews of **uncommitted/dirty work** (e.g. mid-edit review,
+`codex review --uncommitted` flows): the simple "is status empty"
+check fails because the tree was already dirty. Use **snapshot
+comparison** — it's the only approach with no footguns:
+
+```bash
+# BEFORE each reviewer runs
+SNAPSHOT_DIR=$(mktemp -d)
+git status --porcelain > "$SNAPSHOT_DIR/pre-status.txt"
+git diff > "$SNAPSHOT_DIR/pre-unstaged.diff"
+git diff --cached > "$SNAPSHOT_DIR/pre-staged.diff"
+# Capture untracked file contents (hash + path) so we can detect
+# if a reviewer added/modified untracked files. `git status` would
+# catch added/removed but not same-name-different-content edits.
+# NOTE: filenames are treated as DATA, never substituted into
+# shell source. `xargs -I{} sh -c '...{}...'` looks convenient but
+# is command-injectable — a file named `evil$(rm -rf ~).txt`
+# would execute the substitution. Use a null-delimited read loop
+# so each filename arrives as a bash variable (still data).
+git ls-files --others --exclude-standard -z \
+  | while IFS= read -r -d '' f; do
+      printf '%s  %s\n' "$(git hash-object -- "$f")" "$f"
+    done \
+  | sort > "$SNAPSHOT_DIR/pre-untracked.txt"
+
+# ... run the reviewer ...
+
+# AFTER — capture same shape, diff against pre-state
+git status --porcelain > "$SNAPSHOT_DIR/post-status.txt"
+git diff > "$SNAPSHOT_DIR/post-unstaged.diff"
+git diff --cached > "$SNAPSHOT_DIR/post-staged.diff"
+git ls-files --others --exclude-standard -z \
+  | while IFS= read -r -d '' f; do
+      printf '%s  %s\n' "$(git hash-object -- "$f")" "$f"
+    done \
+  | sort > "$SNAPSHOT_DIR/post-untracked.txt"
+
+if ! diff -q "$SNAPSHOT_DIR/pre-status.txt" "$SNAPSHOT_DIR/post-status.txt" >/dev/null \
+  || ! diff -q "$SNAPSHOT_DIR/pre-unstaged.diff" "$SNAPSHOT_DIR/post-unstaged.diff" >/dev/null \
+  || ! diff -q "$SNAPSHOT_DIR/pre-staged.diff" "$SNAPSHOT_DIR/post-staged.diff" >/dev/null \
+  || ! diff -q "$SNAPSHOT_DIR/pre-untracked.txt" "$SNAPSHOT_DIR/post-untracked.txt" >/dev/null; then
+  echo "Reviewer mutated tree state — round invalid. See $SNAPSHOT_DIR for diffs."
+  exit 1
+fi
+rm -rf "$SNAPSHOT_DIR"
+```
+
+This catches:
+- Added/removed tracked files (status diff)
+- Modified tracked files even if status shape unchanged
+  (e.g. `M path → M path` with different bytes — unstaged.diff
+  catches this; status alone wouldn't)
+- Staged/index mutations (staged.diff)
+- Added/removed untracked files OR same-name-different-content
+  (untracked hash list)
+
+Preserves your staging discipline exactly, doesn't touch any
+commits, no WIP dance, no `git reset` calls (so Hard Rules don't
+need a carve-out).
+
+Why not WIP-commit-then-undo (which an earlier draft of this doc
+suggested): that approach accumulated multiple footguns across
+rounds — `git add -A` would leak unrelated untracked files into
+`pr-review`'s diff; `git stash` would actually remove dirty changes
+from the worktree and review the wrong state; `git reset --mixed
+HEAD~1` would silently drop the wrong commit if HEAD moved; the
+patch-capture-and-restore step couldn't recreate untracked files
+deleted by `reset --hard`; `wip:` isn't a valid Conventional Commit
+type and would be rejected by commitlint in any repo using these
+configs (which is the whole org). The snapshot approach sidesteps
+every one of these. If you find yourself reaching for WIP commits
+to make this work, you're solving the wrong problem.
+
+Either way, never just "is `git status` clean now" as the
+post-check — that only works when "clean" was the baseline.
+
+- Use `--pretty` so copilot-cli receives the prompt as readable markdown
+  rather than the JSON-instruction format.
+- Pass `--` after `gh copilot` to forward flags to the underlying
+  `copilot` binary; otherwise `gh` may interpret them.
+- `--effort xhigh` matches codex-cli's reasoning depth; tune down if the
+  diff is small and you want faster runs.
+- The prompt itself also instructs not to modify files. That's
+  defense-in-depth, not the primary enforcement — the permission
+  flags do the actual blocking.
+
+**Known blockers and fallbacks** (real failures we've seen):
+
+- **`Access denied by policy settings`** — the org's Copilot policy
+  is disabling CLI use. Fix at https://github.com/settings/copilot
+  (personal) and/or your org's Copilot policies page (admin). Until
+  enabled, copilot-cli cannot run pre-push.
+- **`Failed to authenticate. API Error: 401`** on `claude -p` — happens
+  when this command is invoked from inside an active Claude Code
+  session; OAuth credentials don't propagate to spawned children.
+  Workaround: set `ANTHROPIC_API_KEY` env var on the child invocation,
+  or run review-cycle from a terminal / CI / codex-cli session instead.
+
+**When a reviewer slot can't be filled**: proceed with the others
+*and* record in the final report which slot was skipped and why.
+**Status MUST drop to `partial` when any required reviewer slot
+is unfilled.** The four required slots by default are:
+- codex-cli (subprocess)
+- the claude reviewer slot — filled by either `claude -p` subprocess
+  OR Agent-tool sub-agent fallback when OAuth fails. The slot is
+  "filled" if EITHER succeeds; only "skipped" if BOTH fail.
+- copilot-cli (subprocess)
+- the orchestrator's checklist pass (the 4th slot, fills itself).
+
+Never silently drop a slot. Never report `clean` with a skipped
+required slot — `/ship` gates on `Status: clean`, and a soft skip
+would let unreviewed code merge.
+
+If copilot-cli is the unavailable one specifically, record this in
+the final report's `Skipped reviewers` field with reason. Downstream
+(`/ship`, or the human invoking review-cycle directly) reads the
+report and decides whether to open the PR as a **draft** so the
+Copilot bot can review before merge candidacy. `/review-cycle`
+itself never opens or pushes PRs — that's `/ship`'s job — so this
+fallback is something the report enables, not something review-cycle
+executes.
+
+### For all three external reviewer slots
+
+These rules apply to the three subprocess reviewers (codex-cli,
+copilot-cli, and the claude `claude -p` subprocess). When the
+claude slot is filled via the Agent-tool sub-agent fallback
+instead, the sub-agent runs in the parent process (no subprocess,
+no stdout/stderr files to capture). The 15-minute-timeout and
+stdout/stderr-capture rules don't apply to that path; the
+sub-agent's findings come back as the agent result.
 
 - Use a review command timeout of at least 15 minutes. Since the Bash tool caps a single foreground call at 10 minutes, run reviewers in the background (`run_in_background: true`) and poll completion with `BashOutput`, or split into multiple shorter calls.
 - Capture stdout and stderr to separate files in the temp review directory — malformed or empty findings almost always have the cause in stderr.
 - Treat each tool's findings as evidence to verify against the code, not as orders to apply. Vague claims get dismissed; concrete file:line citations with named failure paths get acted on.
-- After all three runs complete, merge findings into one checklist grouped by severity (see "Review/Fix Loop" below). Prefer findings flagged by ≥2 reviewers when severity is medium or low; high-severity findings from a single reviewer still warrant verification.
+
+### Orchestrator self-review (the 4th reviewer slot)
+
+The orchestrator (the parent Claude Code session running this command) must also perform an explicit checklist pass against the same commit each round. This is NOT silent-solo — it must produce written findings in the same JSON shape the subprocesses do, including "no findings" when nothing surfaces.
+
+**Read this carefully — the 4th slot has structural confirmation bias the other three don't have:**
+- The orchestrator is the same model family as the claude-cli reviewer (both Claude). Its blind-spot coverage overlaps with claude-cli's, not with codex-cli's or copilot-cli's.
+- The orchestrator authored (or at least drove) the fix being reviewed. It has full context of intent — what the fix was supposed to do, why each decision was made. That context is helpful for *understanding* the code but is exactly the cognitive bias that makes "did I miss anything?" the wrong question to ask yourself.
+- A clean orchestrator pass therefore carries less independent epistemic weight than a clean codex-cli or copilot-cli pass. Consumers of the Reviews report should NOT treat 4/4 clean as equivalent to 3/3 clean + a fresh perspective.
+
+The orchestrator slot's role is **explicit checklist accountability** — forcing the orchestrator to run through the same questions and write down the answer — not independent blind-spot coverage. Keep it in the loop precisely because the discipline of running the checklist surfaces things the orchestrator's "I looked, it's fine" intuition skips, not because Claude-reviewing-its-own-work is a strong signal.
+
+- Run the orchestrator pass in parallel with the subprocesses (while they run in the background, the orchestrator reads the diff against the checklist).
+- Use the same pr-review checklist + extensions the subprocesses use.
+- Output the same JSON shape: `{summary, findings: [{severity, category, file, line, title, body, confidence}], skipped: []}`.
+- Include the orchestrator findings in the round's dedup step alongside subprocess findings, but weigh them with the bias caveat above — a finding the orchestrator surfaces that no other reviewer caught is real; a "no findings" pass from the orchestrator alone (without subprocess corroboration) is weak.
+- If the orchestrator has nothing to add ("no findings"), record that explicitly — the absence of explicit findings is silent-solo; an explicit "{findings: []}" entry is participation.
+
+After all FOUR reviewer slots produce findings (three subprocesses + orchestrator), merge into one checklist grouped by severity (see "Review/Fix Loop" below). Prefer findings flagged by ≥2 reviewers when severity is medium or low; high-severity findings from a single reviewer still warrant verification. Findings flagged ONLY by the orchestrator's self-review get extra scrutiny on whether they're real (the confirmation bias works both ways — orchestrator can over-flag things it knows are intentional too).
 
 ### Optional: capture for calibration
 
-If the repository has a `.pr-review/extensions.md`, also append `| pr-review-capture` to one of the runs (typically the Claude subprocess or Codex) so the findings are stored at `.pr-review/history/<sha>.json`. Later, `pr-review-tune --last 10` can compare stored findings against the review comments PRs actually received and propose refinements to the checklist. This closes the feedback loop so the checklist gets sharper over time.
+If the repository has a `.pr-review/extensions.md`, also append `| pr-review-capture` to one of the runs (typically the claude-cli subprocess or codex-cli) so the findings are stored at `.pr-review/history/<sha>.json`. Later, `pr-review-tune --last 10` can compare stored findings against the review comments PRs actually received and propose refinements to the checklist. This closes the feedback loop so the checklist gets sharper over time.
 
 ```bash
 pr-review --base <base> | claude -p --permission-mode plan | pr-review-capture | tee /dev/tty
@@ -192,28 +438,125 @@ pr-review --base <base> | claude -p --permission-mode plan | pr-review-capture |
 
 ## Review/Fix Loop
 
-Run up to `rounds` review rounds. Default: 3.
+Run up to `rounds` review rounds. The argument default is `3`
+regardless of change type (set at the `rounds=N` arg above). For
+documentation / reviewer-checklist content, consider passing
+`rounds=5..10` because each round catches progressively narrower
+factual edge cases — there's no auto-detection that bumps the cap
+for doc work.
+
+**Hard rules for the loop** (these prevent the "stopped too early"
+*and* "looped too long on trivia" failure modes):
+
+- **Each round runs all reviewers in parallel against the SAME commit**
+  — not sequentially against each other's fixes. Sequential cascading
+  makes findings depend on which reviewer ran first and obscures
+  whether reviewers actually agree on the latest state.
+
+  *Carve-out for the claude sub-agent fallback*: the sub-agent is
+  spawned only after `claude -p` returns auth failure (typically
+  within ~1s). Launching both concurrently as a "defensive precaution"
+  doubles Anthropic API spend when the subprocess succeeds. Launch
+  the subprocess first, wait briefly for the 401, then spawn the
+  sub-agent only if auth failed. This still counts as "parallel" for
+  the same-commit guarantee — the failed subprocess made no observable
+  tree change, and the sub-agent runs concurrently with the codex-cli
+  and copilot-cli subprocesses from its launch onward.
+- **A fix-round on substantive (P0-P2) findings is never the final
+  round.** If you just pushed a fix for a real bug, you MUST run
+  another round to confirm it didn't introduce a new one.
+- **The loop exits when no P0/P1/P2 findings remain — not when
+  every reviewer returns zero findings.** P3 / nit-level findings
+  (polish, narrow factual edges, cosmetic placement) get triaged
+  three ways (fix inline if cheap, record in the final report if
+  worth tracking, file as follow-up if bigger) but never extend the
+  loop. Running another full ensemble round just to verify a
+  one-line wording tweak is technical perfectionism that burns
+  reviewer cycles without changing what ships.
+- **Convergence is per-commit for behaviour-changing fixes** (P0/P1/P2
+  and any non-fix code changes). Reviewer A returning clean against
+  commit X doesn't mean clean against commit Y when Y changes
+  behaviour — re-run all reviewers. **P3-only commits do not reset
+  convergence**: if the only change since the last clean verify
+  round is a P3 wording tweak, you don't need another full ensemble
+  pass.
+- **One reviewer returning clean is NOT convergence — the whole
+  ensemble must return clean.** A reviewer that didn't run can't
+  have caught the bug another reviewer would have. Two failure
+  modes to guard against:
+  - *Silent solo*: only running one reviewer per round (e.g.
+    "codex-cli is fast and reliable, I'll skip the others") and
+    declaring convergence when it returns 0. The whole point of
+    the ensemble is non-overlapping blind spots. A real example:
+    if you solo a single reviewer for ~12 rounds and then add a
+    second reviewer for round 13, expect that second reviewer to
+    immediately surface findings the first kept missing.
+  - *Unavailable ≠ clean*: if a reviewer errored (auth, policy,
+    network, env), that's a missing signal — not a clean signal.
+    Record the unavailability explicitly in the final report.
+    Either resolve the blocker and retry, or accept the
+    reduced-coverage tradeoff with rationale, but do not count
+    the absence as agreement.
 
 For each round, process repositories in dependency order:
 
 1. Run validation before review if files changed since the previous validation pass.
-2. Run Codex, Claude (subprocess), and Copilot reviews for each repository in dependency order. Run the three in parallel when independent (the Bash tool supports background execution).
-3. Merge findings into a single checklist:
-   - `P0/P1`: correctness, data loss, security, broken build, failing tests
-   - `P2`: likely bug, missing test, missing docs for changed behavior
-   - `P3`: maintainability or polish with clear benefit
+2. Run all four reviewer slots for each repository in dependency order: codex-cli, the claude slot (subprocess `claude -p` OR sub-agent via Agent tool when OAuth fails), copilot-cli, and the orchestrator's own checklist pass. Run the three subprocesses in parallel in the background; the orchestrator's pass runs concurrently while waiting on subprocess completion. All four must produce explicit findings (including "no findings") before dedup.
+3. Merge findings into a single checklist by severity:
+   - `P0/P1`: correctness, data loss, security, broken build, failing tests. **Always block. Always loop.**
+   - `P2`: likely bug, missing test, missing docs for changed behavior. **Block by default; loop unless explicitly accepted with rationale in the final report (which `/ship` then copies into the PR body when creating the PR).**
+   - `P3`: maintainability or polish with clear benefit; narrow factual edges affecting tiny version windows or rare paths. **Never block. Never extend the loop just to verify a P3 fix.** For each P3 finding, pick one based on cost vs. value:
+     - **Cheap to fix → fix inline in the same commit/PR.** No verify round needed; group with other fixes if any. (Most P3 wording/clarity tweaks fall here.)
+     - **Worth tracking but not blocking → record in the final report** as accepted non-blocker with brief rationale. If a PR already exists, also copy into the PR body; otherwise `/ship` propagates the report into the PR body at PR creation time.
+     - **Bigger than this PR's scope → file as follow-up issue**, link from the final report (and PR body, when one exists).
 4. Verify each finding against the code. Do not blindly patch speculative review comments.
 5. If `no-fix` was passed, stop after reporting findings.
-6. Address all valid findings in priority order.
+6. Address all valid P0/P1 findings (mandatory) and all valid P2 findings (mandatory unless explicitly accepted in the final report with a one-line rationale) in priority order.
 7. Add or adjust tests for bug fixes and behavior changes.
 8. Rerun relevant validation after edits.
 9. If upstream fixes change the contract consumed downstream, rerun affected downstream validation and review even if that downstream repo had already passed in the current round.
-10. If no actionable findings remain in any included repo and validation is green across the graph, stop the loop as clean.
+10. **If a P0/P1/P2 fix was pushed in this round, the next round MUST run** to verify the fix didn't break something. Do not stop on a P0/P1/P2 fix-round.
+11. Stop the loop as `clean` only when **ALL THREE** conditions
+    hold across the graph:
+    - a verify round returns no *unaccepted* P0/P1/P2 findings
+      from any reviewer in any included repo,
+    - validation is green across the graph, AND
+    - every required reviewer actually ran in the verify round
+      (any skipped/unavailable reviewer → status is `partial`,
+      not `clean`, per the Status contract below).
+
+    Don't conflate "no findings surfaced" with "clean" — a
+    reviewer that didn't run produced no findings because it
+    didn't run, not because none exist.
+
+    Reviewers may continue surfacing an accepted P2 in subsequent
+    rounds (they have no way to know it was accepted); the
+    acceptance lives in the final report, and the stop condition
+    discounts it. P3/nit findings at exit time get recorded in the
+    final report, not fixed in this PR (consumers like `/ship`
+    are responsible for surfacing them in the PR body when the PR
+    exists).
 
 If the loop hits the round cap:
 
 - stop and summarize unresolved findings
 - distinguish true blockers from false positives and accepted non-blockers
+- if findings are still surfacing at the cap, that's a signal — either
+  the spec is over-detailed (consider simplifying), the reviewer set
+  is producing diminishing returns (acceptable to ship with a recorded
+  follow-up), or there's a genuine gap (don't ship; raise the cap or
+  reassess)
+- **special case: a P0/P1/P2 fix landed in the final permitted round**
+  — Rule 10 requires the next round MUST run to verify, but the cap
+  forbids it. Report status as `blocked` with reason
+  `verify-round-blocked-by-cap`. The fix may be correct but no
+  verify round confirmed it; per the Status contract, an unverified
+  P0/P1/P2 fix counts as "unaccepted P0/P1/P2 remaining" — its
+  effect on the codebase is unobserved. Note in the final report
+  that the cap blocked verification and recommend re-running with
+  `rounds=N+1` (or higher) so the verify round can complete. Don't
+  report `clean` just because the post-fix tree has no surfaced
+  findings — those findings were never sought.
 - do not push or open PRs from this command unless the user explicitly asks
 
 ## Final Report
@@ -223,12 +566,41 @@ Return a concise review-cycle report:
 ```text
 ## Review Cycle Result
 - Status: clean | partial | blocked | findings-only
+  (clean = no P0/P1 + all P2 fixed-or-accepted + ALL required reviewers ran
+            + validation green;
+   partial = otherwise-clean but at least one required reviewer was
+            skipped. Single cause only — other "incomplete" states
+            (unverified fix, validation failed) are `blocked`, not
+            `partial`;
+   blocked = unaccepted P0/P1/P2 remaining (whether before or at the
+            round cap), validation failed, OR a P0/P1/P2 fix landed
+            in the final permitted round with no verify round
+            possible (an unverified fix counts as potentially
+            unaccepted — the operator should re-run with a raised
+            `rounds=N+1` to let the verify round complete). A
+            round-cap exit with ONLY P3/nit findings remaining is
+            NOT blocked — those findings go in the accepted
+            non-blockers field and Status stays clean (or partial
+            if a required reviewer was skipped, or blocked if
+            validation failed — the carve-out only suppresses the
+            "P3-only at cap → blocked" path; other blocked causes
+            still apply). Without this carve-out, the round-cap
+            definition would re-block on the exact trivia loop
+            these rules are designed to exit;
+   findings-only = `no-fix` was passed)
 - Repos: <ordered repo list with upstream/downstream roles>
 - Worktrees: <paths>
 - Branches: <branches>
 - Validation: <commands run>
-- Reviews: <rounds and tools>
+- Reviews: <rounds and which reviewers fired per round; e.g. "5 rounds: codex-cli + copilot-cli + claude-sub-agent + orchestrator (claude-cli OAuth blocked, sub-agent used as substitute — same independence)". List ALL FOUR ensemble slots: codex-cli, the claude reviewer (subprocess OR sub-agent), copilot-cli, and the orchestrator's checklist pass. If a slot was skipped or substituted, say so explicitly with the reason — silence reads as "ran" and confuses the Status gate>
 - Docs: <updated, not needed because..., or findings only>
 - Dependency order: <upstream -> downstream edges or none>
-- Remaining: <none or concrete findings/blockers>
+- Remaining blockers (P0/P1, or unaccepted P2): <none or concrete blockers>
+- Accepted P2 (with rationale): <none, or list with rationale — this is
+  the canonical record; `/ship` (or the human creating the PR) copies
+  these into the PR body so human reviewers see the deliberate choice>
+- Accepted non-blockers (P3/nit): <none, or list with brief rationale —
+  also surfaced into the PR body by `/ship` at PR creation time>
+- Skipped reviewers: <none, or which + why — never silently drop;
+  any skipped required reviewer forces Status to `partial`>
 ```

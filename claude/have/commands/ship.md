@@ -158,14 +158,91 @@ Use the same `rounds=`, `base=`, and `repos=` arguments passed to `/ship`. For m
 
 Treat `/review-cycle` as the blocker gate:
 
+**Regardless of the gate's result**, always copy these fields from
+`/review-cycle`'s final report into the PR body when creating or
+updating the PR:
+- `Accepted P2 (with rationale)` — accepted P2 happens on the `clean`
+  branch under the current status contract (all P2 fixed-or-accepted
+  → clean), so this propagation is not gated by `partial`
+- `Accepted non-blockers (P3/nit)` — same reasoning
+- `Skipped reviewers` (if any)
+
+These fields are how human reviewers see the deliberate choices the
+ensemble made. Dropping them defeats the audit trail.
+
+Then branch on the gate result:
+
 - If `/review-cycle` returns `clean`, continue to commit and PR.
-- If it returns `partial` with only false positives or accepted non-blockers, continue only after documenting the rationale in the PR body.
+- If it returns `partial`, branch on the reason recorded in
+  `Skipped reviewers` (the only documented cause of `partial` —
+  Accepted P2 ends in `clean`, not `partial`, per the Status
+  contract):
+  - **Partial because copilot-cli was skipped** (org policy block,
+    network failure, missing auth, etc.): open the PR as a **draft**
+    so the Copilot bot can review post-push.
+
+    **Prerequisite check**: GitHub's automatic Copilot code review
+    of drafts is opt-in per-repo. By default the bot only reviews
+    when a PR opens *non-draft* (or transitions Draft→Open) and
+    does NOT auto-re-review subsequent pushes. Before relying on
+    this fallback, verify in the repo's Copilot settings ([docs](https://docs.github.com/en/copilot/concepts/agents/code-review#about-automatic-pull-request-reviews))
+    that BOTH "Automatically review pull requests" includes
+    "Review draft pull requests" AND "Review new pushes" is
+    enabled. If either is off, the fallback will silently wait
+    forever for a review that never comes — you must instead
+    request the bot review manually with `gh pr edit <PR>
+    --add-reviewer @copilot` ([docs](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/request-a-code-review/use-code-review)).
+
+    **gh CLI version requirement**: `--add-reviewer @copilot`
+    requires gh CLI v2.88.0 or newer ([release notes](https://github.com/cli/cli/releases/tag/v2.88.0)).
+    On older gh, the command fails with `Could not request
+    reviewer: '@copilot' not found` and the bot is NOT requested
+    — silently regressing into the same "draft sits forever
+    without review" mode. Check with `gh --version` first. If
+    your gh is older, upgrade (`brew upgrade gh`) or use the PR
+    page's Reviewers menu manually.
+
+    For re-reviews after subsequent pushes, use the Reviewers menu
+    (re-request button) on the PR page; `gh pr edit` is for the
+    initial add only.
+
+    Address bot findings, then rerun `/review-cycle`. The rerun
+    will *still* return `partial` (the CLI block is the same), so
+    it can't be the clearance signal. Instead: when the Copilot
+    bot has reviewed the **current** commit with no unaddressed
+    findings AND a human explicitly accepts the bot-for-CLI
+    substitution (typically by running `gh pr ready`), that's the
+    clearance path. "Current commit" matters: if you pushed
+    fixes after the bot reviewed, request a re-review on the new
+    SHA before clearing. Document the substitution in the PR body
+    so the audit trail is clear.
+  - **Partial because a different required reviewer slot was unfilled**
+    (codex-cli unavailable, OR claude slot couldn't be filled via
+    EITHER `claude -p` subprocess OR the sub-agent fallback, OR the
+    orchestrator slot was unfilled because no explicit `{findings:
+    []}` checklist pass was produced this round): open as draft and
+    call out the skip in the PR body so a human can decide whether
+    the remaining reviewer coverage is sufficient. Don't mark ready
+    until the skipped slot can be filled or a human explicitly
+    accepts the gap with rationale in the PR body.
+
+    Note: if `claude -p` failed but the sub-agent fallback succeeded,
+    the claude slot IS filled (not skipped). `/review-cycle` should
+    have returned `clean`, not `partial`, in that case — if it
+    returned `partial` anyway, that's a bug in how the orchestrator
+    classified the substitution and should be fixed there, not
+    worked around here.
 - If it returns `blocked`, stop before opening ready PRs. Open draft PRs only when the user passed `draft` or a draft would help expose the blocker.
+  - **Special sub-case: blocked because of `verify-round-blocked-by-cap`** (a P0/P1/P2 fix landed in the final permitted `/review-cycle` round). The fix may be correct but no verify round confirmed it. Don't ship — re-run `/review-cycle rounds=N+1` (or higher) to let the verify round complete, then re-attempt `/ship`. Calling this out explicitly because the failure mode looks like "clean" to a literal reader (the tree post-fix surfaces no findings) but actually means "findings were never sought".
 - If `/review-cycle` changed files, rerun the relevant validation and documentation checks before committing.
 
 ## Commit And PR
 
-When validation and `/review-cycle` are clean, commit and open PRs in dependency order:
+When the Review Cycle Gate above has been satisfied (either `clean`,
+or `partial` with an explicit fallback path documented above),
+commit and open PRs in dependency order. Draft vs ready follows the
+gate's branch — draft on partial, ready on clean (unless the user
+passed `draft`):
 
 1. Recheck `git status --porcelain` in each included repository.
 2. Ensure every branch name is suitable. If needed, create a `claude/ship-<short-topic>` branch per repository.
@@ -173,7 +250,7 @@ When validation and `/review-cycle` are clean, commit and open PRs in dependency
 4. Push upstream branches first, then downstream branches.
 5. Create or update PRs with `gh pr create` or `gh pr edit`, upstream first.
 6. Use each repo's PR template when present.
-7. If an existing PR is draft and the work is now clean, mark it ready for review with `gh pr ready` unless the user passed `draft`.
+7. If an existing PR is draft AND `/review-cycle` returned status `clean` (not `partial`, not `blocked`) AND validation is green AND the user didn't pass `draft`, mark it ready for review with `gh pr ready`. "Now clean" is the Review Cycle Gate output specifically — not a subjective re-read of the working tree. On `partial`, the human runs `gh pr ready` after the partial-branch clearance path documented above (e.g. after Copilot bot has reviewed the current commit and the operator explicitly accepts the bot-for-CLI substitution). Don't auto-ready a draft that came from a partial gate.
 8. Include in every PR:
    - summary of changes
    - validation commands and results
@@ -214,7 +291,10 @@ Return a concise shipping report:
 - Branches: <branches>
 - PRs: <urls or none>
 - Validation: <commands run>
-- Reviews: <rounds and tools>
+- Reviews: <copy the Reviews field from /review-cycle's report verbatim — enumerate all four ensemble slots (codex-cli, claude slot, copilot-cli, orchestrator) with substitutions/skips called out. Don't summarize "3 rounds: codex + copilot + me" — silence reads as "ran" and confuses readers who only see /ship's report>
+- Accepted P2 (with rationale): <copy from /review-cycle's report verbatim — none, or list with rationale. Same field already gets copied into the PR body; mirror it here so /ship's own report is self-contained>
+- Accepted non-blockers (P3/nit): <copy from /review-cycle's report verbatim>
+- Skipped reviewers: <copy from /review-cycle's report verbatim — never silently drop>
 - Docs: <updated or not needed because...>
 - CI: green | failing | blocked | not configured
 - Dependency order: <upstream -> downstream edges or none>
