@@ -254,17 +254,23 @@ For reviews of **uncommitted/dirty work** (e.g. mid-edit review,
 `codex review --uncommitted` flows): the simple "is status empty"
 check fails because the tree was already dirty. Two options:
 
-1. **Stash or commit before reviewing** (recommended): create a
-   `wip` commit or `git stash`, run the round on the committed/
-   stashed state, then unstash/reset after. Trades a small
-   workflow overhead for a clean structural check.
-2. **Snapshot comparison**: capture `git status --porcelain` plus
-   `git diff` plus untracked-file content hashes BEFORE each
-   reviewer; capture again AFTER; diff the two captures. Any
-   difference (added/removed/modified files OR same-status-but-
-   different-content like `M path → M path` with different bytes)
-   means the reviewer mutated state. More complex but doesn't
-   require committing WIP.
+1. **WIP commit before reviewing** (recommended): `git add -A &&
+   git commit -m "wip: review snapshot"`, run the round on the
+   committed state, then `git reset --mixed HEAD~1` afterwards
+   to restore the WIP as uncommitted changes. **Don't use `git
+   stash`** here — stash REMOVES the changes from the worktree,
+   so reviewers run against the pre-WIP tree (the wrong state)
+   and report findings on code you weren't reviewing. The WIP
+   commit keeps the dirty work in the tree as a real commit
+   the reviewers can see.
+2. **Snapshot comparison**: capture `git status --porcelain`,
+   `git diff` (unstaged), `git diff --cached` (staged/index),
+   and untracked-file content hashes BEFORE each reviewer;
+   capture again AFTER; diff the two captures. Any difference
+   (added/removed/modified files OR same-status-but-different-
+   content like `M path → M path` with different bytes, OR
+   index state changes) means the reviewer mutated state. More
+   complex but doesn't require any WIP commit dance.
 
 Either way, never just "is `git status` clean now" as the
 post-check — that only works when "clean" was the baseline.
@@ -332,7 +338,7 @@ The orchestrator (the parent Codex CLI session running this command) must also p
 
 The orchestrator slot's role is **explicit checklist accountability** — forcing the orchestrator to run through the same questions and write down the answer — not independent blind-spot coverage. Keep it in the loop precisely because the discipline of running the checklist surfaces things the orchestrator's "I looked, it's fine" intuition skips.
 
-- Run the orchestrator pass while the subprocesses are running in the background.
+- Run the orchestrator pass in parallel with the subprocesses (while they run in the background, the orchestrator reads the diff against the checklist).
 - Use the same pr-review checklist + extensions the subprocesses use.
 - Output the same JSON shape: `{summary, findings: [{severity, category, file, line, title, body, confidence}], skipped: []}`.
 - Include the orchestrator findings in the round's dedup step alongside subprocess findings, but weigh them with the bias caveat above — a finding the orchestrator surfaces that no other reviewer caught is real; a "no findings" pass from the orchestrator alone (without subprocess corroboration) is weak.

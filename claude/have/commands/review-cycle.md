@@ -172,17 +172,18 @@ pr-review --base <base> | claude -p --permission-mode plan
 
 **Fallback when subprocess auth fails: sub-agent via Agent tool.** When `claude -p` returns `Failed to authenticate. API Error: 401` and no long-lived token / API key is available, spawn a fresh Claude sub-agent via the parent's Agent tool. The sub-agent gets the same review prompt, runs with no context from the parent conversation (same independence as the subprocess), and produces findings in the same JSON shape — no OAuth gymnastics.
 
-Concrete shape:
+Concrete shape (illustrative — invoke via Claude Code's actual
+Agent tool with these parameter values, not as a literal
+JavaScript call):
 
 ```text
-Agent({
-  subagent_type: "general-purpose",
-  description: "PR #N round M claude reviewer",
-  run_in_background: true,
+Agent tool invocation:
+  subagent_type: "general-purpose"
+  description: "PR #N round M claude reviewer"
+  run_in_background: true
   prompt: <same review prompt the subprocess would have received,
            with explicit instruction to output the standard
            {summary, findings: [...], skipped: []} JSON shape>
-})
 ```
 
 Note: the sub-agent is the same model family as the orchestrator (both are Claude), so its blind-spot overlap with the orchestrator's own self-review (4th slot) is high. The independence guarantee it provides is "no shared conversation context"; it does NOT provide "different model family" independence the way the codex-cli or copilot-cli subprocesses do. Treat the sub-agent fallback as a slot-fill of last resort, not equivalence with the subprocess.
@@ -276,17 +277,23 @@ For reviews of **uncommitted/dirty work** (e.g. mid-edit review,
 `codex review --uncommitted` flows): the simple "is status empty"
 check fails because the tree was already dirty. Two options:
 
-1. **Stash or commit before reviewing** (recommended): create a
-   `wip` commit or `git stash`, run the round on the committed/
-   stashed state, then unstash/reset after. Trades a small
-   workflow overhead for a clean structural check.
-2. **Snapshot comparison**: capture `git status --porcelain` plus
-   `git diff` plus untracked-file content hashes BEFORE each
-   reviewer; capture again AFTER; diff the two captures. Any
-   difference (added/removed/modified files OR same-status-but-
-   different-content like `M path → M path` with different bytes)
-   means the reviewer mutated state. More complex but doesn't
-   require committing WIP.
+1. **WIP commit before reviewing** (recommended): `git add -A &&
+   git commit -m "wip: review snapshot"`, run the round on the
+   committed state, then `git reset --mixed HEAD~1` afterwards
+   to restore the WIP as uncommitted changes. **Don't use `git
+   stash`** here — stash REMOVES the changes from the worktree,
+   so reviewers run against the pre-WIP tree (the wrong state)
+   and report findings on code you weren't reviewing. The WIP
+   commit keeps the dirty work in the tree as a real commit
+   the reviewers can see.
+2. **Snapshot comparison**: capture `git status --porcelain`,
+   `git diff` (unstaged), `git diff --cached` (staged/index),
+   and untracked-file content hashes BEFORE each reviewer;
+   capture again AFTER; diff the two captures. Any difference
+   (added/removed/modified files OR same-status-but-different-
+   content like `M path → M path` with different bytes, OR
+   index state changes) means the reviewer mutated state. More
+   complex but doesn't require any WIP commit dance.
 
 Either way, never just "is `git status` clean now" as the
 post-check — that only works when "clean" was the baseline.
@@ -394,6 +401,16 @@ for doc work.
   — not sequentially against each other's fixes. Sequential cascading
   makes findings depend on which reviewer ran first and obscures
   whether reviewers actually agree on the latest state.
+
+  *Carve-out for the claude sub-agent fallback*: the sub-agent is
+  spawned only after `claude -p` returns auth failure (typically
+  within ~1s). Launching both concurrently as a "defensive precaution"
+  doubles Anthropic API spend when the subprocess succeeds. Launch
+  the subprocess first, wait briefly for the 401, then spawn the
+  sub-agent only if auth failed. This still counts as "parallel" for
+  the same-commit guarantee — the failed subprocess made no observable
+  tree change, and the sub-agent runs concurrently with the codex-cli
+  and copilot-cli subprocesses from its launch onward.
 - **A fix-round on substantive (P0-P2) findings is never the final
   round.** If you just pushed a fix for a real bug, you MUST run
   another round to confirm it didn't introduce a new one.

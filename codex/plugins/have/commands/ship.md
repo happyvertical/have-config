@@ -279,7 +279,10 @@ Return a concise shipping report:
 - Branches: <branches>
 - PRs: <urls or none>
 - Validation: <commands run>
-- Reviews: <rounds and tools>
+- Reviews: <copy the Reviews field from /review-cycle's report verbatim — enumerate all four ensemble slots (codex-cli, claude-cli, copilot-cli, orchestrator) with substitutions/skips called out. Don't summarize "3 rounds: codex + copilot + me" — silence reads as "ran" and confuses readers who only see /ship's report>
+- Accepted P2 (with rationale): <copy from /review-cycle's report verbatim — none, or list with rationale. Same field already gets copied into the PR body; mirror it here so /ship's own report is self-contained>
+- Accepted non-blockers (P3/nit): <copy from /review-cycle's report verbatim>
+- Skipped reviewers: <copy from /review-cycle's report verbatim — never silently drop>
 - Docs: <updated or not needed because...>
 - CI: green | failing | blocked | not configured
 - Dependency order: <upstream -> downstream edges or none>
