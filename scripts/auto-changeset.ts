@@ -12,19 +12,16 @@
  * see in the changelog.
  *
  * Bump rules for 0.x.x releases (everything stays pre-1.0):
- * - Any commit with `!` after type/scope, or `BREAKING CHANGE` /
- *   `BREAKING-CHANGE` in the subject OR body → minor bump
+ * - Any commit with `!` after type/scope (e.g. `feat!:` or
+ *   `feat(scope)!:`) → minor bump
  * - All other commits (including `docs:`, `chore:`, `ci:`) → patch bump
  *
- * Body inspection matters: the Conventional Commits spec puts breaking
- * markers in a footer, e.g.
- *
- *   feat: change config shape
- *
- *   BREAKING CHANGE: consumers must update their extends path
- *
- * Subject-only inspection would classify this as a patch and ship a
- * breaking change under a patch version. We scan the body too.
+ * We deliberately do NOT scan for `BREAKING CHANGE:` / `BREAKING-CHANGE:`
+ * footers. The org's convention is `!`, and footer scanning is a
+ * regex-tuning trap (narrative mentions, docstring examples, and inline
+ * subject forms each need bespoke handling). If a footer-marked commit
+ * ever lands here, the maintainer can drop a manual changeset to force
+ * the right bump — the deferral path is the documented escape hatch.
  *
  * `chore(release):` commits are filtered out — they're the workflow's
  * own version-bump commits and including them would re-bump on the
@@ -45,20 +42,13 @@ const PACKAGES = [
 interface Commit {
   hash: string;
   subject: string;
-  body: string;
 }
 
-// Field/record separators for parsing `git log` output. We need bytes
-// that won't appear in commit subjects or bodies and that don't break
-// Node's child_process argv handling. Git's `%x<hex>` pretty-format
-// escape emits the byte in the OUTPUT without requiring us to put it
-// in the argv (which would fail — Node rejects NUL bytes in args, and
-// even non-NUL control bytes in argv are awkward). We use ASCII 31
-// (Unit Separator) between fields and ASCII 30 (Record Separator)
-// between commits — neither appears in real commit text.
-const FIELD_SEP_OUT = '\x1f';
-const COMMIT_SEP_OUT = '\x1e';
-const GIT_PRETTY_FORMAT = `%H%x1f%s%x1f%b%x1e`;
+// Subject-only output: hash + space + subject + newline per commit.
+// We don't fetch the body (we don't scan footers — see top-of-file
+// JSDoc), so newlines are safe as record separators: git commit
+// subjects can't contain newlines.
+const GIT_PRETTY_FORMAT = `%H %s`;
 
 /**
  * Run a git subcommand with args passed positionally. Uses execFileSync
@@ -109,19 +99,21 @@ function getLastReleaseTag(): string | null {
 function getCommitsSinceLastRelease(): Commit[] {
   const lastTag = getLastReleaseTag();
   const range = lastTag ? `${lastTag}..HEAD` : 'HEAD';
-  // %x1f / %x1e are git pretty-format escapes that emit ASCII 31 / 30
-  // in the OUTPUT. We don't put those bytes in argv (Node rejects NUL
-  // bytes there, and embedding raw control bytes is brittle); git
-  // expands them when generating the log.
   const log = git('log', range, `--pretty=format:${GIT_PRETTY_FORMAT}`, '--no-merges');
   if (!log) return [];
+  // Split on newlines — git subjects can't contain newlines, so
+  // there's no ambiguity. First space splits hash from subject.
   return log
-    .split(COMMIT_SEP_OUT)
-    .map((entry) => entry.trim())
+    .split('\n')
+    .map((line) => line.trim())
     .filter(Boolean)
-    .map((entry) => {
-      const [hash = '', subject = '', body = ''] = entry.split(FIELD_SEP_OUT);
-      return { hash, subject, body };
+    .map((line) => {
+      const spaceIdx = line.indexOf(' ');
+      if (spaceIdx === -1) return { hash: line, subject: '' };
+      return {
+        hash: line.slice(0, spaceIdx),
+        subject: line.slice(spaceIdx + 1),
+      };
     });
 }
 
@@ -137,25 +129,9 @@ function hasManualChangesets(): boolean {
 }
 
 function isBreaking(commit: Commit): boolean {
-  // `type!: ...` or `type(scope)!: ...`
-  if (/^[a-z]+(\([^)]+\))?!:/.test(commit.subject)) return true;
-  // Per Conventional Commits spec, `BREAKING CHANGE:` (or
-  // `BREAKING-CHANGE:`) is a footer line — at the start of its own
-  // line in the body, followed by `: `. Anchoring with `^…: `
-  // (multiline) avoids false positives from narrative or docstring
-  // mentions. Without this anchor, a body that SHOWS a
-  // `BREAKING CHANGE:` example (like this script's own top-of-file
-  // JSDoc, or any commit explaining what a breaking-change footer is)
-  // would silently force a minor bump.
-  if (/^BREAKING[- ]CHANGE: /m.test(commit.body)) return true;
-  // Subject: looser anchor — require the `: ` separator (so narrative
-  // phrasing like "fix: avoid BREAKING CHANGE false positives" stays
-  // out) but allow the marker anywhere within the subject. Catches
-  // both the bare form (`BREAKING CHANGE: …`) and the inline form
-  // (`feat: BREAKING CHANGE: …`). Subjects are short and single-line
-  // so line-anchoring would be unnecessarily strict.
-  if (/\bBREAKING[- ]CHANGE: /.test(commit.subject)) return true;
-  return false;
+  // `type!: ...` or `type(scope)!: ...` — the only breaking marker
+  // we recognize. See top-of-file JSDoc for why we don't scan footers.
+  return /^[a-z]+(\([^)]+\))?!:/.test(commit.subject);
 }
 
 function main(): void {
