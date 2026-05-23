@@ -90,6 +90,26 @@ jobs:
         run: |
           set -euo pipefail
 
+          # 0. Refuse to start if a previous release didn't complete
+          #    its tag push. Symptom: an unreleased `chore(release):`
+          #    commit sits between the last `@happyvertical/*@*` tag
+          #    and HEAD. If we proceeded, `auto-changeset` would scan
+          #    `LAST_TAG..HEAD`, filter out the chore commit, and
+          #    re-include the commits that were already published —
+          #    causing a duplicate release with duplicated changelog
+          #    entries. Operator resolution: hand-push the missing
+          #    per-package tags for the already-published versions,
+          #    then re-run this workflow.
+          LAST_PKG_TAG=$(git tag --list '@happyvertical/*@*' --sort=-creatordate | head -1 || true)
+          if [ -n "$LAST_PKG_TAG" ]; then
+            UNTAGGED_RELEASE=$(git log "$LAST_PKG_TAG..HEAD" --pretty=%H --grep='^chore(release):' | head -1)
+            if [ -n "$UNTAGGED_RELEASE" ]; then
+              echo "::error::Found untagged chore(release): commit $UNTAGGED_RELEASE since last per-package tag $LAST_PKG_TAG."
+              echo "::error::This indicates the previous release published packages but failed to push tags. Resolve manually: push the missing per-package tags for the published versions, then re-run."
+              exit 1
+            fi
+          fi
+
           # 1. Generate a changeset from conventional commits since the
           #    last release (or defer if a manual changeset is present).
           pnpm changeset:auto
@@ -112,20 +132,43 @@ jobs:
           #      run to re-include the same commits)
           if git diff --quiet -- 'packages/*/package.json' \
             && git diff --cached --quiet -- 'packages/*/package.json'; then
+            # No package bumped — but `changeset:version` may have
+            # consumed (deleted) a manual no-op changeset. If we exit
+            # here without committing that deletion, the no-op
+            # changeset stays on origin/main, and EVERY future push
+            # repeats the same no-op cycle, silently blocking real
+            # releases until someone notices and deletes it by hand.
+            # Push the cleanup commit so the blocker is gone.
+            if ! git diff --quiet || ! git diff --cached --quiet; then
+              echo "No package bumps but tree changed — committing cleanup of consumed no-op changesets."
+              git add -A
+              git commit -m "chore(release): clean up consumed no-op changesets"
+              git fetch origin +refs/heads/main:refs/remotes/origin/main
+              if [ "$(git rev-parse origin/main)" != "$(git rev-parse HEAD~1)" ]; then
+                echo "::error::origin/main advanced during this run — aborting cleanup push."
+                exit 1
+              fi
+              git push origin main
+            fi
             echo "No package.json bumps after changeset:version — nothing to publish."
             exit 0
           fi
 
-          # Use eslint-config as a representative version for logging.
-          # All publishable packages bump together under auto-changeset
-          # (manual changesets may bump a subset).
-          AFTER=$(node -p "require('./packages/eslint-config/package.json').version")
-          echo "Releasing version $AFTER"
+          # Identify which packages actually bumped this run. Used
+          # both for logging and for the commit message — naming a
+          # specific version (like `v$ESLINT_VERSION`) would be wrong
+          # for subset releases via manual changesets that bump only
+          # one or two packages. Per-package versions live in the
+          # tags created by `changeset publish`.
+          BUMPED=$(git diff --name-only -- 'packages/*/package.json' \
+            | sed 's|packages/\(.*\)/package.json|\1|' \
+            | paste -sd ',' -)
+          echo "Bumped packages: $BUMPED"
 
           # 4. Commit the version bumps + changelog entries. The chore
           #    prefix matches what the job-level `if:` guard filters.
           git add -A
-          git commit -m "chore(release): v$AFTER"
+          git commit -m "chore(release): bump $BUMPED"
 
           # 5. Verify main hasn't moved out from under us, then push
           #    the commit BEFORE publishing. Order matters: if publish
