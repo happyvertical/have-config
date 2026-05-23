@@ -6,6 +6,12 @@ description: Run a repeatable review/fix/retest loop over current work, optional
 
 Run a bounded review cycle on the current work independent of shipping. Default to 3 rounds unless the user passes `rounds=N`.
 
+The parent agent running this command is **Codex CLI**. The command orchestrates a **4-reviewer ensemble**: three independent reviewer subprocesses — a separate codex-cli invocation, claude-cli, and GitHub copilot-cli — plus the orchestrator's own explicit checklist pass against the same commit. Different models have different blind spots; the ensemble catches more than any single tool.
+
+When OAuth or auth issues block any subprocess reviewer, the parent should record the unavailability in the final report and either resolve the blocker (e.g. `claude setup-token` for claude-cli, org Copilot policy toggle for copilot-cli) or explicitly accept the reduced-coverage tradeoff with rationale. Don't silently drop a reviewer.
+
+The orchestrator's own pass is NOT silent-solo — it must be an explicit checklist run against the staged/committed diff, with findings written out in the same JSON shape the subprocesses produce. "I looked, it's fine" is not a review; an enumerated set of P0/P1/P2/P3 findings (including "no findings") is.
+
 ## Hard Rules
 
 - Respect the global worktree isolation policy before making edits. If the current checkout is a primary checkout such as `/Users/will/Work/.../repos/...`, move the work to a dedicated worktree and branch before editing, preferably under `/Users/will/.codex/worktrees/` with a `codex/` branch prefix.
@@ -404,12 +410,12 @@ If the loop hits the round cap:
   forbids it. Report status as `blocked` with reason
   `verify-round-blocked-by-cap`. The fix may be correct but no
   verify round confirmed it; per the Status contract, an unverified
-  P0/P1/P2 fix counts as "unaccepted P0/P1/P2 remaining" because we
-  don't yet know whether the fix introduced new findings. Note in
-  the final report that the cap blocked verification and recommend
-  re-running with `rounds=N+1` (or higher) so the verify round can
-  complete. Don't report `clean` just because the post-fix tree has
-  no surfaced findings — those findings were never sought.
+  P0/P1/P2 fix counts as "unaccepted P0/P1/P2 remaining" — its
+  effect on the codebase is unobserved. Note in the final report
+  that the cap blocked verification and recommend re-running with
+  `rounds=N+1` (or higher) so the verify round can complete. Don't
+  report `clean` just because the post-fix tree has no surfaced
+  findings — those findings were never sought.
 - do not push or open PRs from this command unless the user explicitly asks
 
 ## Final Report
@@ -434,15 +440,18 @@ Return a concise review-cycle report:
             round-cap exit with ONLY P3/nit findings remaining is
             NOT blocked — those findings go in the accepted
             non-blockers field and Status stays clean (or partial
-            if a required reviewer was skipped). Without this
-            carve-out, the round-cap definition would re-block on
-            the exact trivia loop these rules are designed to exit;
+            if a required reviewer was skipped, or blocked if
+            validation failed — the carve-out only suppresses the
+            "P3-only at cap → blocked" path; other blocked causes
+            still apply). Without this carve-out, the round-cap
+            definition would re-block on the exact trivia loop
+            these rules are designed to exit;
    findings-only = `no-fix` was passed)
 - Repos: <ordered repo list with upstream/downstream roles>
 - Worktrees: <paths>
 - Branches: <branches>
 - Validation: <commands run>
-- Reviews: <rounds and tools; e.g. "3 rounds: codex-cli + claude-cli + copilot-cli". List ALL required reviewers that ran — the parent agent's own review does NOT substitute for any subprocess reviewer (the Hard Rules require independent subprocesses; the orchestrator agent's inline opinion does not count as a separate reviewer)>
+- Reviews: <rounds and which reviewers fired per round; e.g. "5 rounds: codex-cli + claude-cli + copilot-cli + orchestrator". List ALL FOUR ensemble slots: codex-cli, claude-cli (subprocess OR sub-agent fallback), copilot-cli, and the orchestrator's checklist pass. If a slot was skipped or substituted, say so explicitly with the reason — silence reads as "ran" and confuses the Status gate>
 - Docs: <updated, not needed because..., or findings only>
 - Dependency order: <upstream -> downstream edges or none>
 - Remaining blockers (P0/P1, or unaccepted P2): <none or concrete blockers>

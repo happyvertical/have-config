@@ -1,5 +1,5 @@
 ---
-description: Prepare current work for shipping: validate, update docs, run /review-cycle, open a ready PR, and watch CI to green.
+description: "Prepare current work for shipping: validate, update docs, run /review-cycle, open a ready PR, and watch CI to green."
 ---
 
 # /ship
@@ -183,17 +183,15 @@ Then branch on the gate result:
     of drafts is opt-in per-repo. By default the bot only reviews
     when a PR opens *non-draft* (or transitions Draft→Open) and
     does NOT auto-re-review subsequent pushes. Before relying on
-    this fallback, verify in the repo's Copilot settings (Settings
-    → Code & automation → Copilot → Code review) that BOTH
-    "Automatically review pull requests" includes "Review draft
-    pull requests" AND "Review new pushes" is enabled. If either
-    is off, the fallback will silently wait forever for a review
-    that never comes — you must instead request the bot review
-    manually via `gh api -X POST
-    repos/{owner}/{repo}/pulls/{number}/requested_reviewers -F
-    'reviewers[]=copilot-pull-request-reviewer'` (or equivalent
-    in the PR UI), and re-request after each push that needs
-    re-review.
+    this fallback, verify in the repo's Copilot settings ([docs](https://docs.github.com/en/copilot/concepts/agents/code-review#about-automatic-pull-request-reviews))
+    that BOTH "Automatically review pull requests" includes
+    "Review draft pull requests" AND "Review new pushes" is
+    enabled. If either is off, the fallback will silently wait
+    forever for a review that never comes — you must instead
+    request the bot review manually with `gh pr edit <PR>
+    --add-reviewer @copilot` ([docs](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/request-a-code-review/use-code-review))
+    and re-request after each push that needs re-review via the
+    Reviewers menu (re-request button) on the PR page.
 
     Address bot findings, then rerun `/review-cycle`. The rerun
     will *still* return `partial` (the CLI block is the same), so
