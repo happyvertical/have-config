@@ -384,14 +384,20 @@ Return a concise review-cycle report:
   (clean = no P0/P1 + all P2 fixed-or-accepted + ALL required reviewers ran
             + validation green;
    partial = otherwise-clean but at least one required reviewer was skipped;
-   blocked = unaccepted P0/P1/P2 remaining, cap hit with findings open,
-            or validation failed;
+   blocked = unaccepted P0/P1/P2 remaining (whether before or at the
+            round cap), or validation failed. A round-cap exit with
+            ONLY P3/nit findings remaining is NOT blocked — those
+            findings go in the accepted non-blockers field and Status
+            stays clean (or partial if a required reviewer was
+            skipped). Without this carve-out, the round-cap definition
+            would re-block on the exact trivia loop these rules are
+            designed to exit;
    findings-only = `no-fix` was passed)
 - Repos: <ordered repo list with upstream/downstream roles>
 - Worktrees: <paths>
 - Branches: <branches>
 - Validation: <commands run>
-- Reviews: <rounds and tools; e.g. "3 rounds: codex-cli + copilot-cli + me">
+- Reviews: <rounds and tools; e.g. "3 rounds: codex-cli + claude-cli + copilot-cli". List ALL required reviewers that ran — the parent agent's own review does NOT substitute for any subprocess reviewer (the Hard Rules require independent subprocesses; the orchestrator agent's inline opinion does not count as a separate reviewer)>
 - Docs: <updated, not needed because..., or findings only>
 - Dependency order: <upstream -> downstream edges or none>
 - Remaining blockers (P0/P1, or unaccepted P2): <none or concrete blockers>

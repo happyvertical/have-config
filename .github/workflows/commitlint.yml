@@ -48,15 +48,18 @@ jobs:
             if [[ "$msg" =~ ^Merge\  ]]; then
               continue
             fi
-            # Scope allows alphanumeric, hyphen, comma, and forward
-            # slash. Comma covers multi-scope commits common when a
-            # single change touches two related surfaces (e.g.
-            # `fix(review-cycle,ship): ...` for a PR editing both
-            # slash command files in tandem). Forward slash covers
-            # dependency-name scopes like `chore(tibdex/github-app-token)`.
-            # First char must be alphanumeric to prevent stray
-            # punctuation leading the scope.
-            if ! printf '%s' "$msg" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|chore|ci|build|revert)(\([a-z0-9][a-z0-9,/-]*\))?!?: .+'; then
+            # Scope grammar:
+            #   scope    = segment ("," segment)*
+            #   segment  = [a-z0-9] ([a-z0-9/-]* [a-z0-9])?
+            # Each comma-separated segment must start AND end with an
+            # alphanumeric character. A single alphanumeric is a valid
+            # segment. Forward slash and hyphen are allowed only
+            # BETWEEN alphanumerics within a segment, never at the
+            # boundary. Tokenizing rejects malformed scopes like
+            # `fix(a,):`, `fix(a/):`, `fix(a,,b):`, `fix(a-):`,
+            # `fix(,b):`, and `fix(/foo):` that a looser pattern
+            # would accept.
+            if ! printf '%s' "$msg" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|chore|ci|build|revert)(\([a-z0-9]([a-z0-9/-]*[a-z0-9])?(,[a-z0-9]([a-z0-9/-]*[a-z0-9])?)*\))?!?: .+'; then
               msg_escaped=$(escape_wc "$msg")
               echo "::error::Invalid commit message: $msg_escaped"
               echo "  Expected format: type(scope?): subject"
