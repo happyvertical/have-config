@@ -227,9 +227,23 @@ org's PR pre-push, findings going to their own terminal — none of
 that applies. The flags above are enough.
 
 Add `--deny-tool` for any specific commands you want hard-blocked.
-The per-command `--allow-tool` allowlist is the actual enforcement
-of "no write tools"; the prompt's "don't modify files" instruction
-is defense-in-depth.
+The per-command `--allow-tool` allowlist is **mostly** read-only —
+but it is NOT a hard write-prevention boundary, because copilot-cli
+matches at first-level subcommand granularity. `--allow-tool
+'shell(git diff)'` approves any `git diff …` invocation including
+write-capable forms like `git diff --output=path` which can dirty
+the working tree. Similarly, `shell(rg)` permits redirection-style
+flags depending on shell escaping. The prompt's "don't modify
+files" instruction is defense-in-depth, but the structural
+guarantee for "the reviewer ran against the same commit" is the
+**post-review tree-clean check**: after every reviewer
+invocation, run `git status --porcelain` (and `git diff` if you
+want detail). If the working tree changed, the round is invalid —
+the reviewer didn't stay read-only, the commit being reviewed
+moved, and the same-commit guarantee Step 11 depends on is broken.
+Either fail the round and restart from a clean checkout, or move
+copilot-cli into a disposable worktree if this becomes a recurring
+issue in your workflow.
 
 - Use `--pretty` so copilot-cli receives the prompt as readable markdown
   rather than the JSON-instruction format.
@@ -352,9 +366,19 @@ For each round, process repositories in dependency order:
 8. Rerun relevant validation after edits.
 9. If upstream fixes change the contract consumed downstream, rerun affected downstream validation and review even if that downstream repo had already passed in the current round.
 10. **If a P0/P1/P2 fix was pushed in this round, the next round MUST run** to verify the fix didn't break something. Do not stop on a P0/P1/P2 fix-round.
-11. Stop the loop as clean when **a verify round returns no
-    *unaccepted* P0/P1/P2 findings from any reviewer** in any
-    included repo and validation is green across the graph.
+11. Stop the loop as `clean` only when **ALL THREE** conditions
+    hold across the graph:
+    - a verify round returns no *unaccepted* P0/P1/P2 findings
+      from any reviewer in any included repo,
+    - validation is green across the graph, AND
+    - every required reviewer actually ran in the verify round
+      (any skipped/unavailable reviewer → status is `partial`,
+      not `clean`, per the Status contract below).
+
+    Don't conflate "no findings surfaced" with "clean" — a
+    reviewer that didn't run produced no findings because it
+    didn't run, not because none exist.
+
     Reviewers may continue surfacing an accepted P2 in subsequent
     rounds (they have no way to know it was accepted); the
     acceptance lives in the final report, and the stop condition

@@ -175,14 +175,34 @@ Then branch on the gate result:
   `Skipped reviewers` or `Accepted P2`:
   - **Partial because copilot-cli was skipped** (org policy block,
     network failure, missing auth, etc.): open the PR as a **draft**
-    so the Copilot bot can review post-push. Address bot findings,
-    then rerun `/review-cycle`. The rerun will *still* return
-    `partial` (the CLI block is the same), so it can't be the
-    clearance signal. Instead: when the Copilot bot has reviewed
-    the current commit with no unaddressed findings AND a human
-    explicitly accepts the bot-for-CLI substitution (typically by
-    running `gh pr ready`), that's the clearance path. Document
-    the substitution in the PR body so the audit trail is clear.
+    so the Copilot bot can review post-push.
+
+    **Prerequisite check**: GitHub's automatic Copilot code review
+    of drafts is opt-in per-repo. By default the bot only reviews
+    when a PR opens *non-draft* (or transitions Draft→Open) and
+    does NOT auto-re-review subsequent pushes. Before relying on
+    this fallback, verify in the repo's Copilot settings (Settings
+    → Code & automation → Copilot → Code review) that BOTH
+    "Automatically review pull requests" includes "Review draft
+    pull requests" AND "Review new pushes" is enabled. If either
+    is off, the fallback will silently wait forever for a review
+    that never comes — you must instead request the bot review
+    manually via `gh api -X POST
+    repos/{owner}/{repo}/pulls/{number}/requested_reviewers -F
+    'reviewers[]=copilot-pull-request-reviewer'` (or equivalent
+    in the PR UI), and re-request after each push that needs
+    re-review.
+
+    Address bot findings, then rerun `/review-cycle`. The rerun
+    will *still* return `partial` (the CLI block is the same), so
+    it can't be the clearance signal. Instead: when the Copilot
+    bot has reviewed the **current** commit with no unaddressed
+    findings AND a human explicitly accepts the bot-for-CLI
+    substitution (typically by running `gh pr ready`), that's the
+    clearance path. "Current commit" matters: if you pushed
+    fixes after the bot reviewed, request a re-review on the new
+    SHA before clearing. Document the substitution in the PR body
+    so the audit trail is clear.
   - **Partial because a different required reviewer was skipped**
     (codex-cli unavailable, claude-cli subprocess auth fails): open as
     draft and call out the skip in the PR body so a human can
