@@ -191,9 +191,20 @@ Then branch on the gate result:
     enabled. If either is off, the fallback will silently wait
     forever for a review that never comes — you must instead
     request the bot review manually with `gh pr edit <PR>
-    --add-reviewer @copilot` ([docs](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/request-a-code-review/use-code-review))
-    and re-request after each push that needs re-review via the
-    Reviewers menu (re-request button) on the PR page.
+    --add-reviewer @copilot` ([docs](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/request-a-code-review/use-code-review)).
+
+    **gh CLI version requirement**: `--add-reviewer @copilot`
+    requires gh CLI v2.88.0 or newer ([release notes](https://github.com/cli/cli/releases/tag/v2.88.0)).
+    On older gh, the command fails with `Could not request
+    reviewer: '@copilot' not found` and the bot is NOT requested
+    — silently regressing into the same "draft sits forever
+    without review" mode. Check with `gh --version` first. If
+    your gh is older, upgrade (`brew upgrade gh`) or use the PR
+    page's Reviewers menu manually.
+
+    For re-reviews after subsequent pushes, use the Reviewers menu
+    (re-request button) on the PR page; `gh pr edit` is for the
+    initial add only.
 
     Address bot findings, then rerun `/review-cycle`. The rerun
     will *still* return `partial` (the CLI block is the same), so
@@ -205,12 +216,21 @@ Then branch on the gate result:
     fixes after the bot reviewed, request a re-review on the new
     SHA before clearing. Document the substitution in the PR body
     so the audit trail is clear.
-  - **Partial because a different required reviewer was skipped**
-    (codex-cli unavailable, claude-cli subprocess auth fails): open as
-    draft and call out the skip in the PR body so a human can
+  - **Partial because a different required reviewer slot was unfilled**
+    (codex-cli unavailable, OR claude slot couldn't be filled via
+    EITHER `claude -p` subprocess OR the sub-agent fallback): open
+    as draft and call out the skip in the PR body so a human can
     decide whether the remaining reviewer coverage is sufficient.
-    Don't mark ready until the skipped reviewer can run or a human
-    explicitly accepts the gap with rationale in the PR body.
+    Don't mark ready until the skipped slot can be filled or a
+    human explicitly accepts the gap with rationale in the PR
+    body.
+
+    Note: if `claude -p` failed but the sub-agent fallback succeeded,
+    the claude slot IS filled (not skipped). `/review-cycle` should
+    have returned `clean`, not `partial`, in that case — if it
+    returned `partial` anyway, that's a bug in how the orchestrator
+    classified the substitution and should be fixed there, not
+    worked around here.
 - If it returns `blocked`, stop before opening ready PRs. Open draft PRs only when the user passed `draft` or a draft would help expose the blocker.
   - **Special sub-case: blocked because of `verify-round-blocked-by-cap`** (a P0/P1/P2 fix landed in the final permitted `/review-cycle` round). The fix may be correct but no verify round confirmed it. Don't ship — re-run `/review-cycle rounds=N+1` (or higher) to let the verify round complete, then re-attempt `/ship`. Calling this out explicitly because the failure mode looks like "clean" to a literal reader (the tree post-fix surfaces no findings) but actually means "findings were never sought".
 - If `/review-cycle` changed files, rerun the relevant validation and documentation checks before committing.
@@ -229,7 +249,7 @@ passed `draft`):
 4. Push upstream branches first, then downstream branches.
 5. Create or update PRs with `gh pr create` or `gh pr edit`, upstream first.
 6. Use each repo's PR template when present.
-7. If an existing PR is draft and the work is now clean, mark it ready for review with `gh pr ready` unless the user passed `draft`.
+7. If an existing PR is draft AND `/review-cycle` returned status `clean` (not `partial`, not `blocked`) AND validation is green AND the user didn't pass `draft`, mark it ready for review with `gh pr ready`. "Now clean" is the Review Cycle Gate output specifically — not a subjective re-read of the working tree. On `partial`, the human runs `gh pr ready` after the partial-branch clearance path documented above (e.g. after Copilot bot has reviewed the current commit and the operator explicitly accepts the bot-for-CLI substitution). Don't auto-ready a draft that came from a partial gate.
 8. Include in every PR:
    - summary of changes
    - validation commands and results

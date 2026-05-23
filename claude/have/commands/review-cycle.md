@@ -245,15 +245,33 @@ write-capable forms like `git diff --output=path` which can dirty
 the working tree. Similarly, `shell(rg)` permits redirection-style
 flags depending on shell escaping. The prompt's "don't modify
 files" instruction is defense-in-depth, but the structural
-guarantee for "the reviewer ran against the same commit" is the
-**post-review tree-clean check**: after every reviewer
-invocation, run `git status --porcelain` (and `git diff` if you
-want detail). If the working tree changed, the round is invalid —
-the reviewer didn't stay read-only, the commit being reviewed
-moved, and the same-commit guarantee Step 11 depends on is broken.
-Either fail the round and restart from a clean checkout, or move
-copilot-cli into a disposable worktree if this becomes a recurring
-issue in your workflow.
+guarantee for "the reviewer ran against the same commit" is a
+**pre/post tree-snapshot comparison**.
+
+For reviews of **committed work** (the common case): before each
+reviewer, the tree is clean; after, run `git status --porcelain` —
+any output means the reviewer modified the tree, the same-commit
+guarantee is broken, the round is invalid. Restart from the clean
+commit (or run reviewers in a disposable worktree).
+
+For reviews of **uncommitted/dirty work** (e.g. mid-edit review,
+`codex review --uncommitted` flows): the simple "is status empty"
+check fails because the tree was already dirty. Two options:
+
+1. **Stash or commit before reviewing** (recommended): create a
+   `wip` commit or `git stash`, run the round on the committed/
+   stashed state, then unstash/reset after. Trades a small
+   workflow overhead for a clean structural check.
+2. **Snapshot comparison**: capture `git status --porcelain` plus
+   `git diff` plus untracked-file content hashes BEFORE each
+   reviewer; capture again AFTER; diff the two captures. Any
+   difference (added/removed/modified files OR same-status-but-
+   different-content like `M path → M path` with different bytes)
+   means the reviewer mutated state. More complex but doesn't
+   require committing WIP.
+
+Either way, never just "is `git status` clean now" as the
+post-check — that only works when "clean" was the baseline.
 
 - Use `--pretty` so copilot-cli receives the prompt as readable markdown
   rather than the JSON-instruction format.
@@ -294,12 +312,23 @@ itself never opens or pushes PRs — that's `/ship`'s job — so this
 fallback is something the report enables, not something review-cycle
 executes.
 
-### For all three
+### For all three subprocess reviewers
 
 - Use a review command timeout of at least 15 minutes. Since the Bash tool caps a single foreground call at 10 minutes, run reviewers in the background (`run_in_background: true`) and poll completion with `BashOutput`, or split into multiple shorter calls.
 - Capture stdout and stderr to separate files in the temp review directory — malformed or empty findings almost always have the cause in stderr.
 - Treat each tool's findings as evidence to verify against the code, not as orders to apply. Vague claims get dismissed; concrete file:line citations with named failure paths get acted on.
-- After all three runs complete, merge findings into one checklist grouped by severity (see "Review/Fix Loop" below). Prefer findings flagged by ≥2 reviewers when severity is medium or low; high-severity findings from a single reviewer still warrant verification.
+
+### Orchestrator self-review (the 4th reviewer slot)
+
+The orchestrator (the parent Claude Code session running this command) must also perform an explicit checklist pass against the same commit each round. This is NOT silent-solo — it must produce written findings in the same JSON shape the subprocesses do, including "no findings" when nothing surfaces.
+
+- Run the orchestrator pass in parallel with the subprocesses (while they run in the background, the orchestrator reads the diff against the checklist).
+- Use the same pr-review checklist + extensions the subprocesses use.
+- Output the same JSON shape: `{summary, findings: [{severity, category, file, line, title, body, confidence}], skipped: []}`.
+- Include the orchestrator findings in the round's dedup step alongside subprocess findings.
+- If the orchestrator has nothing to add ("no findings"), record that explicitly — the absence of explicit findings is silent-solo; an explicit "{findings: []}" entry is participation.
+
+After all FOUR reviewer slots produce findings (three subprocesses + orchestrator), merge into one checklist grouped by severity (see "Review/Fix Loop" below). Prefer findings flagged by ≥2 reviewers when severity is medium or low; high-severity findings from a single reviewer still warrant verification.
 
 ### Optional: capture for calibration
 
@@ -364,7 +393,7 @@ for doc work.
 For each round, process repositories in dependency order:
 
 1. Run validation before review if files changed since the previous validation pass.
-2. Run codex-cli, claude-cli, and copilot-cli reviews for each repository in dependency order. Run the three in parallel when independent (the Bash tool supports background execution).
+2. Run all four reviewer slots for each repository in dependency order: codex-cli, the claude slot (subprocess `claude -p` OR sub-agent via Agent tool when OAuth fails), copilot-cli, and the orchestrator's own checklist pass. Run the three subprocesses in parallel in the background; the orchestrator's pass runs concurrently while waiting on subprocess completion. All four must produce explicit findings (including "no findings") before dedup.
 3. Merge findings into a single checklist by severity:
    - `P0/P1`: correctness, data loss, security, broken build, failing tests. **Always block. Always loop.**
    - `P2`: likely bug, missing test, missing docs for changed behavior. **Block by default; loop unless explicitly accepted with rationale in the final report (which `/ship` then copies into the PR body when creating the PR).**
