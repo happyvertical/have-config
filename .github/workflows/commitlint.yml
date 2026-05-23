@@ -5,8 +5,11 @@ on:
     types: [opened, synchronize, reopened]
 
 permissions:
+  # Only contents:read is needed — the job does `actions/checkout`
+  # + `git log` over commit SHAs from the event payload. No PR API
+  # calls or PR metadata reads, so `pull-requests:read` would be
+  # dead scope. Per least-privilege, drop it.
   contents: read
-  pull-requests: read
 
 jobs:
   commitlint:
@@ -69,7 +72,7 @@ jobs:
               echo "::error::Invalid commit message: $msg_escaped"
               echo "  Expected format: type(scope?): subject"
               echo "  Valid types: feat, fix, docs, style, refactor, perf, test, chore, ci, build, revert"
-              echo "  Scope chars: alphanumeric, hyphen, comma (multi-scope), forward slash (e.g. dep names)"
+              echo "  Scope chars: alphanumeric, hyphen, comma (multi-scope), forward slash (e.g. dep names), optional leading @ (scoped npm packages)"
               FAILED=1
             fi
           done <<< "$COMMITS"

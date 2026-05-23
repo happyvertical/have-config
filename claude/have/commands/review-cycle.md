@@ -405,13 +405,15 @@ If the loop hits the round cap:
   reassess)
 - **special case: a P0/P1/P2 fix landed in the final permitted round**
   — Rule 10 requires the next round MUST run to verify, but the cap
-  forbids it. Report status as `partial` (not `clean` and not
-  `blocked`): the fix may be correct but no verify round confirmed
-  it. Note in the final report that the verify round was blocked by
-  the cap and recommend re-running with `rounds=N+1` (or higher) so
-  the verify round can complete. Don't report `clean` just because
-  the post-fix tree has no surfaced findings — those findings were
-  never sought.
+  forbids it. Report status as `blocked` with reason
+  `verify-round-blocked-by-cap`. The fix may be correct but no
+  verify round confirmed it; per the Status contract, an unverified
+  P0/P1/P2 fix counts as "unaccepted P0/P1/P2 remaining" because we
+  don't yet know whether the fix introduced new findings. Note in
+  the final report that the cap blocked verification and recommend
+  re-running with `rounds=N+1` (or higher) so the verify round can
+  complete. Don't report `clean` just because the post-fix tree has
+  no surfaced findings — those findings were never sought.
 - do not push or open PRs from this command unless the user explicitly asks
 
 ## Final Report
@@ -423,15 +425,22 @@ Return a concise review-cycle report:
 - Status: clean | partial | blocked | findings-only
   (clean = no P0/P1 + all P2 fixed-or-accepted + ALL required reviewers ran
             + validation green;
-   partial = otherwise-clean but at least one required reviewer was skipped;
+   partial = otherwise-clean but at least one required reviewer was
+            skipped. Single cause only — other "incomplete" states
+            (unverified fix, validation failed) are `blocked`, not
+            `partial`;
    blocked = unaccepted P0/P1/P2 remaining (whether before or at the
-            round cap), or validation failed. A round-cap exit with
-            ONLY P3/nit findings remaining is NOT blocked — those
-            findings go in the accepted non-blockers field and Status
-            stays clean (or partial if a required reviewer was
-            skipped). Without this carve-out, the round-cap definition
-            would re-block on the exact trivia loop these rules are
-            designed to exit;
+            round cap), validation failed, OR a P0/P1/P2 fix landed
+            in the final permitted round with no verify round
+            possible (an unverified fix counts as potentially
+            unaccepted — the operator should re-run with a raised
+            `rounds=N+1` to let the verify round complete). A
+            round-cap exit with ONLY P3/nit findings remaining is
+            NOT blocked — those findings go in the accepted
+            non-blockers field and Status stays clean (or partial
+            if a required reviewer was skipped). Without this
+            carve-out, the round-cap definition would re-block on
+            the exact trivia loop these rules are designed to exit;
    findings-only = `no-fix` was passed)
 - Repos: <ordered repo list with upstream/downstream roles>
 - Worktrees: <paths>

@@ -10,17 +10,22 @@ node_modules/
 # - `--output-format json` writes JSONL to stdout (not a file)
 # - `--log-dir <dir>` defaults to `~/.copilot/logs/` (outside repo)
 #
-# We ignore the `.md` form (the documented file leak vector) and
-# keep the `.jsonl` form for defense-in-depth — an earlier real
-# incident (commit 1fc8677) leaked `.deny-test.jsonl` /
-# `.revparse-test.jsonl` from Copilot's own tool-permission probes
-# that the current CLI may have renamed but could resurface. Keeping
-# both prefixes narrow (no wildcard `*-test.jsonl` — that would hide
-# legitimate fixtures).
+# We ignore both `.md` (the current documented file leak vector
+# from `--share`) and `.jsonl` (for any future CLI version that
+# writes session output as JSONL to a file).
+#
+# NOTE: These narrow patterns DO NOT cover the prior 1fc8677
+# incident filenames (`.deny-test.jsonl`, `.revparse-test.jsonl`),
+# which came from internal Copilot tool-permission probes that
+# don't match `copilot-session-*`. A wildcard like `*-test.jsonl`
+# would catch them but would also hide legitimate fixtures
+# (e.g. `fixtures/payment-test.jsonl`) — the round-7 walkback
+# (commit ab01756) chose narrow-correct over broad-defense.
 #
 # The PRIMARY prevention is the review-cycle docs' rule: review
-# outputs go to /tmp, not the repo. These patterns are belt-and-
-# suspenders.
+# outputs go to /tmp, not the repo. These patterns catch only the
+# documented `copilot-session-*` file shapes; for arbitrary
+# Copilot-internal probe filenames the structural defense is /tmp.
 copilot-session-*.md
 .copilot-session-*.md
 copilot-session-*.jsonl
