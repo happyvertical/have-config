@@ -155,11 +155,11 @@ If the repository being reviewed has no `.pr-review/extensions.md`, the shared c
   ```
 - Do not use `claude ultrareview` or any `ultrareview` variant for any reviewer here.
 
-### Run claude-cli review (as a subprocess)
+### Run claude-cli review (subprocess preferred, sub-agent fallback)
 
-The parent agent is already Claude Code — this step invokes a *separate* `claude -p` subprocess so the review pass is independent of the orchestrating session. Don't try to satisfy this step by reasoning inline; spawn the subprocess so the review and the orchestration are genuinely decoupled.
+The parent agent is already Claude Code — this step invokes a *separate* claude reviewer so the review pass is independent of the orchestrating session. Don't try to satisfy this step by reasoning inline as the orchestrator; that's the 4th slot (orchestrator self-review), not the claude reviewer slot.
 
-claude-cli (the subprocess) does not fetch its own diff — pipe `pr-review` output without `--no-diff`:
+**Preferred: `claude -p` subprocess.** claude-cli (the subprocess) does not fetch its own diff — pipe `pr-review` output without `--no-diff`:
 
 ```bash
 pr-review --base <base> | claude -p --permission-mode plan
@@ -168,6 +168,24 @@ pr-review --base <base> | claude -p --permission-mode plan
 - Use `claude -p` in non-interactive print mode.
 - Prefer read-only/plan permissions for the review run (`--permission-mode plan`).
 - Disallow edit/write tools where supported.
+- Requires `claude -p` to authenticate. From inside a Claude Code parent session, the parent's OAuth typically doesn't propagate to the child — set up a long-lived token via `claude setup-token` (one-time, run in an interactive terminal where browser flow works) and export `CLAUDE_CODE_OAUTH_TOKEN`, OR set `ANTHROPIC_API_KEY` to a key from console.anthropic.com.
+
+**Fallback when subprocess auth fails: sub-agent via Agent tool.** When `claude -p` returns `Failed to authenticate. API Error: 401` and no long-lived token / API key is available, spawn a fresh Claude sub-agent via the parent's Agent tool. The sub-agent gets the same review prompt, runs with no context from the parent conversation (same independence as the subprocess), and produces findings in the same JSON shape — no OAuth gymnastics.
+
+Concrete shape:
+
+```text
+Agent({
+  subagent_type: "general-purpose",
+  description: "PR #N round M claude reviewer",
+  run_in_background: true,
+  prompt: <same review prompt the subprocess would have received,
+           with explicit instruction to output the standard
+           {summary, findings: [...], skipped: []} JSON shape>
+})
+```
+
+Note: the sub-agent is the same model family as the orchestrator (both are Claude), so its blind-spot overlap with the orchestrator's own self-review (4th slot) is high. The independence guarantee it provides is "no shared conversation context"; it does NOT provide "different model family" independence the way the codex-cli or copilot-cli subprocesses do. Treat the sub-agent fallback as a slot-fill of last resort, not equivalence with the subprocess.
 
 ### Run copilot-cli review
 
@@ -295,13 +313,20 @@ post-check — that only works when "clean" was the baseline.
   Workaround: set `ANTHROPIC_API_KEY` env var on the child invocation,
   or run review-cycle from a terminal / CI / codex-cli session instead.
 
-**When a reviewer is unavailable**: proceed with the others *and*
-record in the final report which reviewer was skipped and why.
-**Status MUST drop to `partial` when any required reviewer is
-skipped** (codex-cli, copilot-cli, and claude-cli subprocess are all
-required by default). Never silently drop. Never report `clean`
-with a skipped required reviewer — `/ship` gates on `Status: clean`,
-and a soft skip would let unreviewed code merge.
+**When a reviewer slot can't be filled**: proceed with the others
+*and* record in the final report which slot was skipped and why.
+**Status MUST drop to `partial` when any required reviewer slot
+is unfilled.** The four required slots by default are:
+- codex-cli (subprocess)
+- the claude reviewer slot — filled by either `claude -p` subprocess
+  OR Agent-tool sub-agent fallback when OAuth fails. The slot is
+  "filled" if EITHER succeeds; only "skipped" if BOTH fail.
+- copilot-cli (subprocess)
+- the orchestrator's checklist pass (the 4th slot, fills itself).
+
+Never silently drop a slot. Never report `clean` with a skipped
+required slot — `/ship` gates on `Status: clean`, and a soft skip
+would let unreviewed code merge.
 
 If copilot-cli is the unavailable one specifically, record this in
 the final report's `Skipped reviewers` field with reason. Downstream
@@ -312,7 +337,15 @@ itself never opens or pushes PRs — that's `/ship`'s job — so this
 fallback is something the report enables, not something review-cycle
 executes.
 
-### For all three subprocess reviewers
+### For all three external reviewer slots
+
+These rules apply to the three subprocess reviewers (codex-cli,
+copilot-cli, and the claude `claude -p` subprocess). When the
+claude slot is filled via the Agent-tool sub-agent fallback
+instead, the sub-agent runs in the parent process (no subprocess,
+no stdout/stderr files to capture). The 15-minute-timeout and
+stdout/stderr-capture rules don't apply to that path; the
+sub-agent's findings come back as the agent result.
 
 - Use a review command timeout of at least 15 minutes. Since the Bash tool caps a single foreground call at 10 minutes, run reviewers in the background (`run_in_background: true`) and poll completion with `BashOutput`, or split into multiple shorter calls.
 - Capture stdout and stderr to separate files in the temp review directory — malformed or empty findings almost always have the cause in stderr.
@@ -322,13 +355,20 @@ executes.
 
 The orchestrator (the parent Claude Code session running this command) must also perform an explicit checklist pass against the same commit each round. This is NOT silent-solo — it must produce written findings in the same JSON shape the subprocesses do, including "no findings" when nothing surfaces.
 
+**Read this carefully — the 4th slot has structural confirmation bias the other three don't have:**
+- The orchestrator is the same model family as the claude-cli reviewer (both Claude). Its blind-spot coverage overlaps with claude-cli's, not with codex-cli's or copilot-cli's.
+- The orchestrator authored (or at least drove) the fix being reviewed. It has full context of intent — what the fix was supposed to do, why each decision was made. That context is helpful for *understanding* the code but is exactly the cognitive bias that makes "did I miss anything?" the wrong question to ask yourself.
+- A clean orchestrator pass therefore carries less independent epistemic weight than a clean codex-cli or copilot-cli pass. Consumers of the Reviews report should NOT treat 4/4 clean as equivalent to 3/3 clean + a fresh perspective.
+
+The orchestrator slot's role is **explicit checklist accountability** — forcing the orchestrator to run through the same questions and write down the answer — not independent blind-spot coverage. Keep it in the loop precisely because the discipline of running the checklist surfaces things the orchestrator's "I looked, it's fine" intuition skips, not because Claude-reviewing-its-own-work is a strong signal.
+
 - Run the orchestrator pass in parallel with the subprocesses (while they run in the background, the orchestrator reads the diff against the checklist).
 - Use the same pr-review checklist + extensions the subprocesses use.
 - Output the same JSON shape: `{summary, findings: [{severity, category, file, line, title, body, confidence}], skipped: []}`.
-- Include the orchestrator findings in the round's dedup step alongside subprocess findings.
+- Include the orchestrator findings in the round's dedup step alongside subprocess findings, but weigh them with the bias caveat above — a finding the orchestrator surfaces that no other reviewer caught is real; a "no findings" pass from the orchestrator alone (without subprocess corroboration) is weak.
 - If the orchestrator has nothing to add ("no findings"), record that explicitly — the absence of explicit findings is silent-solo; an explicit "{findings: []}" entry is participation.
 
-After all FOUR reviewer slots produce findings (three subprocesses + orchestrator), merge into one checklist grouped by severity (see "Review/Fix Loop" below). Prefer findings flagged by ≥2 reviewers when severity is medium or low; high-severity findings from a single reviewer still warrant verification.
+After all FOUR reviewer slots produce findings (three subprocesses + orchestrator), merge into one checklist grouped by severity (see "Review/Fix Loop" below). Prefer findings flagged by ≥2 reviewers when severity is medium or low; high-severity findings from a single reviewer still warrant verification. Findings flagged ONLY by the orchestrator's self-review get extra scrutiny on whether they're real (the confirmation bias works both ways — orchestrator can over-flag things it knows are intentional too).
 
 ### Optional: capture for calibration
 

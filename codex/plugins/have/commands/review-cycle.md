@@ -293,11 +293,18 @@ post-check — that only works when "clean" was the baseline.
 
 **When a reviewer is unavailable**: proceed with the others *and*
 record in the final report which reviewer was skipped and why.
-**Status MUST drop to `partial` when any required reviewer is
-skipped** (codex-cli, copilot-cli, and claude-cli subprocess are all
-required by default). Never silently drop. Never report `clean`
-with a skipped required reviewer — `/ship` gates on `Status: clean`,
-and a soft skip would let unreviewed code merge.
+**Status MUST drop to `partial` when any required reviewer slot
+is unfilled.** The four required slots by default are:
+- codex-cli (subprocess)
+- claude-cli (subprocess) — the Codex CLI orchestrator does not
+  have a documented sub-agent substitute, so subprocess auth
+  failure means the slot is skipped (no fallback).
+- copilot-cli (subprocess)
+- the orchestrator's checklist pass (the 4th slot, fills itself).
+
+Never silently drop a slot. Never report `clean` with a skipped
+required slot — `/ship` gates on `Status: clean`, and a soft skip
+would let unreviewed code merge.
 
 If copilot-cli is the unavailable one specifically, record this in
 the final report's `Skipped reviewers` field with reason. Downstream
@@ -318,13 +325,20 @@ executes.
 
 The orchestrator (the parent Codex CLI session running this command) must also perform an explicit checklist pass against the same commit each round. This is NOT silent-solo — it must produce written findings in the same JSON shape the subprocesses do, including "no findings" when nothing surfaces.
 
+**Read this carefully — the 4th slot has structural confirmation bias the other three don't have:**
+- The orchestrator is the same model family as the codex-cli reviewer (both Codex). Its blind-spot coverage overlaps with codex-cli's, not with claude-cli's or copilot-cli's.
+- The orchestrator authored (or at least drove) the fix being reviewed. It has full context of intent — what the fix was supposed to do, why each decision was made. That context is helpful for *understanding* the code but is exactly the cognitive bias that makes "did I miss anything?" the wrong question to ask yourself.
+- A clean orchestrator pass therefore carries less independent epistemic weight than a clean claude-cli or copilot-cli pass.
+
+The orchestrator slot's role is **explicit checklist accountability** — forcing the orchestrator to run through the same questions and write down the answer — not independent blind-spot coverage. Keep it in the loop precisely because the discipline of running the checklist surfaces things the orchestrator's "I looked, it's fine" intuition skips.
+
 - Run the orchestrator pass while the subprocesses are running in the background.
 - Use the same pr-review checklist + extensions the subprocesses use.
 - Output the same JSON shape: `{summary, findings: [{severity, category, file, line, title, body, confidence}], skipped: []}`.
-- Include the orchestrator findings in the round's dedup step alongside subprocess findings.
+- Include the orchestrator findings in the round's dedup step alongside subprocess findings, but weigh them with the bias caveat above — a finding the orchestrator surfaces that no other reviewer caught is real; a "no findings" pass from the orchestrator alone (without subprocess corroboration) is weak.
 - If the orchestrator has nothing to add ("no findings"), record that explicitly — the absence of explicit findings is silent-solo; an explicit "{findings: []}" entry is participation.
 
-After all FOUR reviewer slots produce findings (three subprocesses + orchestrator), merge into one checklist grouped by severity (see "Review/Fix Loop" below). Prefer findings flagged by ≥2 reviewers when severity is medium or low; high-severity findings from a single reviewer still warrant verification.
+After all FOUR reviewer slots produce findings (three subprocesses + orchestrator), merge into one checklist grouped by severity (see "Review/Fix Loop" below). Prefer findings flagged by ≥2 reviewers when severity is medium or low; high-severity findings from a single reviewer still warrant verification. Findings flagged ONLY by the orchestrator's self-review get extra scrutiny on whether they're real (the confirmation bias works both ways — orchestrator can over-flag things it knows are intentional too).
 
 ### Optional: capture for calibration
 
@@ -389,7 +403,7 @@ for doc work.
 For each round, process repositories in dependency order:
 
 1. Run validation before review if files changed since the previous validation pass.
-2. Run all four reviewer slots for each repository in dependency order: codex-cli, claude-cli (or accepted-tradeoff if blocked), copilot-cli, and the orchestrator's own checklist pass. Run the three subprocesses in parallel where possible; the orchestrator's pass runs concurrently. All four must produce explicit findings (including "no findings") before dedup.
+2. Run all four reviewer slots for each repository in dependency order: codex-cli, claude-cli, copilot-cli, and the orchestrator's own checklist pass. Run the three subprocesses in parallel where possible; the orchestrator's pass runs concurrently. All four must produce explicit findings (including "no findings") before dedup. If a slot can't be filled (e.g. claude-cli auth fails — no sub-agent substitute on this orchestrator), record the skip in the final report and let the Status contract drop to `partial`. Don't smuggle a skip into the slot list as "filled with caveat" — it changes the gate semantics.
 3. Merge findings into a single checklist by severity:
    - `P0/P1`: correctness, data loss, security, broken build, failing tests. **Always block. Always loop.**
    - `P2`: likely bug, missing test, missing docs for changed behavior. **Block by default; loop unless explicitly accepted with rationale in the final report (which `/ship` then copies into the PR body when creating the PR).**
