@@ -316,6 +316,23 @@ catches progressively narrower factual edge cases.
   convergence**: if the only change since the last clean verify
   round is a P3 wording tweak, you don't need another full ensemble
   pass.
+- **One reviewer returning clean is NOT convergence — the whole
+  ensemble must return clean.** A reviewer that didn't run can't
+  have caught the bug another reviewer would have. Two failure
+  modes to guard against:
+  - *Silent solo*: only running one reviewer per round (e.g.
+    "codex-cli is fast and reliable, I'll skip the others") and
+    declaring convergence when it returns 0. The whole point of
+    the ensemble is non-overlapping blind spots. A real example:
+    if you solo a single reviewer for ~12 rounds and then add a
+    second reviewer for round 13, expect that second reviewer to
+    immediately surface findings the first kept missing.
+  - *Unavailable ≠ clean*: if a reviewer errored (auth, policy,
+    network, env), that's a missing signal — not a clean signal.
+    Record the unavailability explicitly in the final report.
+    Either resolve the blocker and retry, or accept the
+    reduced-coverage tradeoff with rationale, but do not count
+    the absence as agreement.
 
 For each round, process repositories in dependency order:
 
