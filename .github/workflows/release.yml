@@ -132,7 +132,12 @@ jobs:
           #    Push order: commit first, then publish, then tags.
           #    `changeset:publish` creates per-package tags locally;
           #    we push them afterwards.
-          git fetch origin main
+          # Explicit destination refspec — `git fetch origin main` with
+          # a source-only refspec is config-dependent: under some setups
+          # (custom refspecs, partial/shallow clones) it only updates
+          # FETCH_HEAD, not `refs/remotes/origin/main`. The `+` forces
+          # the remote-tracking branch to update non-fast-forward too.
+          git fetch origin +refs/heads/main:refs/remotes/origin/main
           if [ "$(git rev-parse origin/main)" != "$(git rev-parse HEAD~1)" ]; then
             echo "::error::origin/main advanced during this run. Aborting before publish to avoid registry/git drift. The next push to main will re-run and pick up the new state."
             exit 1
@@ -185,10 +190,20 @@ jobs:
           # meantime — the registry artifact would silently contain
           # post-version-commit code. Recovery is only safe immediately
           # after a failed publish, before any new commits land.
-          git fetch origin main
+          # Explicit destination refspec — see auto path above for why
+          # `git fetch origin main` alone is not reliable for updating
+          # `refs/remotes/origin/main` under all configurations.
+          git fetch origin +refs/heads/main:refs/remotes/origin/main
           HEAD_MSG=$(git log -1 --pretty=%s HEAD)
           if ! printf '%s' "$HEAD_MSG" | grep -q '^chore(release):'; then
-            echo "::error::Recovery requires HEAD to be a chore(release): commit. HEAD subject is: $HEAD_MSG"
+            # Escape `%`, CR, LF before embedding user-controlled commit
+            # subject in a workflow command — per GitHub's
+            # workflow-commands docs, those bytes can corrupt the
+            # command payload or inject additional commands.
+            HEAD_MSG_ESCAPED="${HEAD_MSG//%/%25}"
+            HEAD_MSG_ESCAPED="${HEAD_MSG_ESCAPED//$'\r'/%0D}"
+            HEAD_MSG_ESCAPED="${HEAD_MSG_ESCAPED//$'\n'/%0A}"
+            echo "::error::Recovery requires HEAD to be a chore(release): commit. HEAD subject is: $HEAD_MSG_ESCAPED"
             echo "::error::If the failed release commit is no longer at HEAD, resolve manually — do not use this recovery path."
             exit 1
           fi
