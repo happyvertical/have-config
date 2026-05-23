@@ -141,17 +141,20 @@ function isBreaking(commit: Commit): boolean {
   if (/^[a-z]+(\([^)]+\))?!:/.test(commit.subject)) return true;
   // Per Conventional Commits spec, `BREAKING CHANGE:` (or
   // `BREAKING-CHANGE:`) is a footer line — at the start of its own
-  // line, followed by `: `. Anchoring with `^…: ` (multiline) is
-  // required to avoid false positives from narrative or docstring
-  // mentions of the literal phrase. Without this anchor, a body that
-  // SHOWS a `BREAKING CHANGE:` example (like this script's own
-  // top-of-file JSDoc, or any commit explaining what a breaking-change
-  // footer is) would silently force a minor bump.
-  const footerPattern = /^BREAKING[- ]CHANGE: /m;
-  if (footerPattern.test(commit.body)) return true;
-  // Catch the same footer accidentally written in the subject line.
-  // Rare but unambiguous intent — treat it as breaking.
-  if (/^BREAKING[- ]CHANGE: /.test(commit.subject)) return true;
+  // line in the body, followed by `: `. Anchoring with `^…: `
+  // (multiline) avoids false positives from narrative or docstring
+  // mentions. Without this anchor, a body that SHOWS a
+  // `BREAKING CHANGE:` example (like this script's own top-of-file
+  // JSDoc, or any commit explaining what a breaking-change footer is)
+  // would silently force a minor bump.
+  if (/^BREAKING[- ]CHANGE: /m.test(commit.body)) return true;
+  // Subject: looser anchor — require the `: ` separator (so narrative
+  // phrasing like "fix: avoid BREAKING CHANGE false positives" stays
+  // out) but allow the marker anywhere within the subject. Catches
+  // both the bare form (`BREAKING CHANGE: …`) and the inline form
+  // (`feat: BREAKING CHANGE: …`). Subjects are short and single-line
+  // so line-anchoring would be unnecessarily strict.
+  if (/\bBREAKING[- ]CHANGE: /.test(commit.subject)) return true;
   return false;
 }
 
