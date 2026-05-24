@@ -1,0 +1,36 @@
+{
+  "schema": "https://happyvertical.com/hv-agent-manifest/v1",
+  "layer": "profile:hermes",
+  "priority": 25,
+  "commands": [
+    {
+      "agent": "claude",
+      "name": "check-setup",
+      "path": "commands/claude/check-setup.md",
+      "description": "Verify HappyVertical service access for this Hermes agent"
+    },
+    {
+      "agent": "codex",
+      "name": "check-setup",
+      "path": "commands/codex/check-setup.md",
+      "description": "Verify HappyVertical service access for this Hermes agent"
+    }
+  ],
+  "skills": [
+    {
+      "agent": "codex",
+      "name": "check-setup",
+      "path": "skills/check-setup",
+      "description": "Verify HappyVertical service access for this Hermes agent"
+    }
+  ],
+  "env_requirements": [
+    {
+      "capability": "hermes",
+      "vars": ["HV_AGENT_EMAIL"],
+      "default_enabled": false,
+      "description": "Per-agent HappyVertical account identity for Hermes."
+    }
+  ],
+  "services": []
+}

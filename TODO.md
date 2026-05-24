@@ -10,8 +10,13 @@ that needs it.
 
 ## Slash commands and agent surfaces
 
-- [x] `claude/` — Claude Code `have` plugin
-- [x] `codex/plugins/have/` — Codex `have` plugin
+- [x] `hv/manifest.json` — org-owned agent docs, env requirements, and service
+      metadata consumed by the resolver
+- [x] `profiles/hermes/` — Hermes-only commands and skills such as
+      `check-setup`
+- [ ] `claude/` / `codex/` packaged surfaces, only if a future second
+      consumer needs marketplace/plugin distribution instead of generated local
+      files
 - [ ] `cursor/` — Cursor commands, when there's a second project using
       Cursor as the primary IDE
 
@@ -51,16 +56,28 @@ Pick when the first consumer pair exists, not before.
 
 ## CLAUDE.md / AGENTS.md template sections
 
-- [ ] `agent-doc-snippets/` — durable policy text that should be
+- [x] `agent-doc-snippets/` — durable policy text that should be
       identical across repos:
-      - No Workarounds Policy
-      - No Private API Reach-Ins
-      - Git Workflow SOPs
-      - Git And PR SOP
-      - Review Readiness
-      
-      Today every repo carries its own copy and drift is a recurring
-      problem. Lifting these into snippets would require a
-      consumption mechanism (probably a generator script that
-      assembles each repo's CLAUDE.md from snippets + repo-specific
-      sections).
+      - HappyVertical source layering
+      - runtime behavior
+      - identity and secrets
+      - service map
+
+      The have-config resolver assembles these snippets with active profiles,
+      Context Forge snapshots, and local overrides.
+
+## Service registry and infrastructure docs
+
+- [x] `docs/infrastructure.md` — HappyVertical service map for humans and agents
+- [x] `docs/agent-playbook.md` — agent-facing guide for which service to use
+      for identity, secrets, files, tasks, chat, gateway access, and memory
+- [x] `services/services.json` — machine-readable service registry consumed by
+      have-config reports
+
+## Context Forge snapshots
+
+- [x] `hv/manifest.json` — source manifest consumed by have-config
+- [x] `profiles/hermes/manifest.json` — Hermes-only defaults such as
+      `check-setup`
+- [ ] Publish an exporter from Context Forge into the manifest shape expected by
+      have-config (`manifest.json` with `skills`, `commands`, and `agent_docs`).

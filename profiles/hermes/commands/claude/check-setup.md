@@ -1,0 +1,54 @@
+---
+description: "Verify this agent's HappyVertical service access."
+---
+
+# /check-setup
+
+Verify that this workstation or agent container is correctly connected to
+HappyVertical services. Do not print secrets, tokens, cookies, passwords, or
+decrypted values.
+
+Produce a concise setup report with columns:
+
+| Service | Check | Result | Evidence | Next action |
+| --- | --- | --- | --- | --- |
+
+Use `OK`, `Blocked`, or `Skipped` for each result. `Skipped` is only valid when
+the service is intentionally not enabled for this agent.
+
+Run these checks:
+
+1. Email identity
+   - Confirm `HV_AGENT_EMAIL` or an equivalent local account identity is set.
+   - If a mail connector or CLI is available, verify the account can list or
+     read its own mailbox metadata without exposing message contents.
+2. HappyVertical IDP
+   - Confirm `https://idp.happyvertical.com` is reachable.
+   - If authenticated browser/session/CLI access is available, verify the
+     assigned account can authenticate.
+3. Vikunja project management
+   - Confirm `https://todo.happyvertical.com` is reachable.
+   - If `HV_VIKUNJA_URL` and `HV_VIKUNJA_TOKEN` are set, make a read-only API
+     request that proves access.
+4. Warden
+   - Confirm `https://warden.happyvertical.com` is reachable.
+   - Verify the agent can access its approved credential source without
+     printing any secret value.
+5. OxiCloud file sharing
+   - Confirm `https://drive.happyvertical.com` is reachable.
+   - If `rclone` and an OxiCloud/WebDAV remote are configured, run a read-only
+     listing or config check.
+6. Context Forge memory and prompts
+   - Confirm `https://context.happyvertical.com` is reachable.
+   - Verify the agent is configured to use Context Forge for prompts,
+     resources, and memory. If Hindsight or Context Forge MCP tools are
+     available, perform a harmless recall/list/read check against the expected
+     HappyVertical memory bank.
+   - Verify `HV_CONTEXTFORGE_SNAPSHOT_DIR` exists when Context Forge snapshots
+     are expected for install-time materialization.
+
+If a check cannot be performed noninteractively, mark it `Blocked` and state
+the missing credential, connector, environment variable, CLI, or local config.
+
+If a Context Forge snapshot or local override replaced this command during
+install, follow the generated installed command instead of this org fallback.
