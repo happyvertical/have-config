@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
+DOTFILES_DIR="$TMP_DIR/dotfiles"
 HAVE_CONFIG_DIR="$TMP_DIR/have-config"
 CONTEXTFORGE_DIR="$TMP_DIR/contextforge"
 LOCAL_DIR="$TMP_DIR/local"
@@ -13,29 +14,75 @@ OUTPUT_DIR="$TMP_DIR/generated"
 LOCK_PATH="$TMP_DIR/agent-lock.json"
 REPORT_PATH="$TMP_DIR/install-report.md"
 
-mkdir -p "$HAVE_CONFIG_DIR/hv" "$HAVE_CONFIG_DIR/profiles/hermes/commands/codex" \
+mkdir -p "$DOTFILES_DIR/agent" "$DOTFILES_DIR/.agents/commands/codex" \
+    "$DOTFILES_DIR/.agents/commands/claude" "$DOTFILES_DIR/.agents/skills/ship" \
+    "$DOTFILES_DIR/.agents/skills/review-cycle" "$HAVE_CONFIG_DIR/hv" "$HAVE_CONFIG_DIR/profiles/hermes/commands/codex" \
     "$HAVE_CONFIG_DIR/profiles/hermes/skills/check-setup" "$CONTEXTFORGE_DIR" \
     "$LOCAL_DIR/commands/codex" "$LOCAL_DIR/skills/codex/ship" "$HOME_DIR"
+mkdir -p "$HOME_DIR/.claude"
 
-cat > "$HAVE_CONFIG_DIR/hv/manifest.json" <<'JSON'
+cat > "$DOTFILES_DIR/agent/manifest.json" <<'JSON'
 {
-  "schema": "https://happyvertical.com/hv-agent-manifest/v1",
-  "layer": "have-config",
-  "priority": 20,
+  "schema": "https://example.test/agent-manifest/v1",
+  "layer": "dotfiles",
+  "priority": 10,
   "commands": [
     {
-      "agent": "all",
-      "name": "review",
-      "content": "have-config review"
+      "agent": "codex",
+      "name": "review-cycle",
+      "path": ".agents/commands/codex/review-cycle.md"
+    },
+    {
+      "agent": "claude",
+      "name": "review-cycle",
+      "path": ".agents/commands/claude/review-cycle.md"
     }
   ],
   "skills": [
     {
       "agent": "codex",
       "name": "ship",
-      "content": "have-config ship"
+      "path": ".agents/skills/ship"
+    },
+    {
+      "agent": "codex",
+      "name": "review-cycle",
+      "path": ".agents/skills/review-cycle"
     }
   ],
+  "agent_docs": [
+    {
+      "id": "dotfiles.test",
+      "targets": ["agents"],
+      "content": "Agents may use dotfiles-baseline."
+    }
+  ]
+}
+JSON
+
+cat > "$DOTFILES_DIR/.agents/commands/codex/review-cycle.md" <<'EOF'
+dotfiles codex review-cycle
+EOF
+
+cat > "$DOTFILES_DIR/.agents/commands/claude/review-cycle.md" <<'EOF'
+dotfiles claude review-cycle
+EOF
+
+cat > "$DOTFILES_DIR/.agents/skills/ship/SKILL.md" <<'EOF'
+dotfiles ship
+EOF
+
+cat > "$DOTFILES_DIR/.agents/skills/review-cycle/SKILL.md" <<'EOF'
+dotfiles review-cycle skill
+EOF
+
+cat > "$HAVE_CONFIG_DIR/hv/manifest.json" <<'JSON'
+{
+  "schema": "https://happyvertical.com/hv-agent-manifest/v1",
+  "layer": "have-config",
+  "priority": 20,
+  "commands": [],
+  "skills": [],
   "agent_docs": [
     {
       "id": "have-config.test",
@@ -91,8 +138,8 @@ cat > "$CONTEXTFORGE_DIR/manifest.json" <<'JSON'
   "commands": [
     {
       "agent": "codex",
-      "name": "review",
-      "content": "contextforge review"
+      "name": "review-cycle",
+      "content": "contextforge review-cycle"
     }
   ],
   "skills": [
@@ -116,11 +163,20 @@ cat > "$LOCAL_DIR/commands/codex/review.md" <<'EOF'
 local review
 EOF
 
+cat > "$LOCAL_DIR/commands/codex/review-cycle.md" <<'EOF'
+local review-cycle
+EOF
+
 cat > "$LOCAL_DIR/skills/codex/ship/SKILL.md" <<'EOF'
 local ship
 EOF
 
+cat > "$HOME_DIR/.claude/CLAUDE.md" <<'EOF'
+local claude note
+EOF
+
 HV_AGENT_PROFILE=hermes python3 "$ROOT_DIR/scripts/hv-agent-resolver.py" \
+    --dotfiles-dir "$DOTFILES_DIR" \
     --have-config-dir "$HAVE_CONFIG_DIR" \
     --contextforge-dir "$CONTEXTFORGE_DIR" \
     --local-overrides-dir "$LOCAL_DIR" \
@@ -129,15 +185,20 @@ HV_AGENT_PROFILE=hermes python3 "$ROOT_DIR/scripts/hv-agent-resolver.py" \
     --lock-path "$LOCK_PATH" \
     --report-path "$REPORT_PATH" >/dev/null
 
-grep -q "local review" "$HOME_DIR/.codex/commands/review.md"
-grep -q "have-config review" "$HOME_DIR/.claude/commands/review.md"
+grep -q "local review-cycle" "$HOME_DIR/.codex/commands/review-cycle.md"
+grep -q "dotfiles claude review-cycle" "$HOME_DIR/.claude/commands/review-cycle.md"
 grep -q "local ship" "$HOME_DIR/.agents/skills/ship/SKILL.md"
+grep -q "dotfiles review-cycle skill" "$HOME_DIR/.agents/skills/review-cycle/SKILL.md"
 grep -q "hermes check setup" "$HOME_DIR/.codex/commands/check-setup.md"
 grep -q "hermes check setup skill" "$HOME_DIR/.agents/skills/check-setup/SKILL.md"
+grep -q "local claude note" "$LOCAL_DIR/agent-docs/CLAUDE.md"
+grep -q "local claude note" "$HOME_DIR/.claude/CLAUDE.md"
 grep -q "potential must/must-not conflict" "$REPORT_PATH"
-grep -q '"key": "codex:command:review"' "$LOCK_PATH"
+grep -q '"key": "codex:command:review-cycle"' "$LOCK_PATH"
+grep -q '`dotfiles` priority 10: available' "$REPORT_PATH"
 
 if HV_ENABLED_CAPABILITIES=identity python3 "$ROOT_DIR/scripts/hv-agent-resolver.py" \
+    --dotfiles-dir "$DOTFILES_DIR" \
     --have-config-dir "$HAVE_CONFIG_DIR" \
     --contextforge-dir "$CONTEXTFORGE_DIR" \
     --local-overrides-dir "$LOCAL_DIR" \

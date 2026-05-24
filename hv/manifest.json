@@ -14,46 +14,8 @@
       "path": "docs/agent-playbook.md"
     }
   ],
-  "commands": [
-    {
-      "agent": "claude",
-      "name": "ship",
-      "path": "claude/have/commands/ship.md",
-      "description": "HappyVertical shipping workflow"
-    },
-    {
-      "agent": "claude",
-      "name": "review-cycle",
-      "path": "claude/have/commands/review-cycle.md",
-      "description": "HappyVertical review/fix/retest workflow"
-    },
-    {
-      "agent": "codex",
-      "name": "ship",
-      "path": "codex/plugins/have/commands/ship.md",
-      "description": "HappyVertical shipping workflow"
-    },
-    {
-      "agent": "codex",
-      "name": "review-cycle",
-      "path": "codex/plugins/have/commands/review-cycle.md",
-      "description": "HappyVertical review/fix/retest workflow"
-    }
-  ],
-  "skills": [
-    {
-      "agent": "codex",
-      "name": "ship",
-      "path": "codex/plugins/have/skills/ship",
-      "description": "HappyVertical shipping workflow"
-    },
-    {
-      "agent": "codex",
-      "name": "review-cycle",
-      "path": "codex/plugins/have/skills/review-cycle",
-      "description": "HappyVertical review/fix/retest workflow"
-    }
-  ],
+  "commands": [],
+  "skills": [],
   "env_requirements": [
     {
       "capability": "happyvertical-identity",

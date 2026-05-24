@@ -3,18 +3,20 @@
 HappyVertical shared cross-repo configuration for agent-assisted development.
 
 This repo is the umbrella for configuration that ≥2 HappyVertical projects
-consume. Today that's Claude Code command files, Codex workflow skills, service
-registry docs, agent instruction snippets, and shared lint/format/tsconfig
-bases. Runtime agent behavior should be installed as local files; Context Forge
-is consumed as an install-time snapshot by the have-config resolver.
+consume. Today that's organization standards, service registry docs, agent
+instruction snippets, profile-specific commands/skills, and shared
+lint/format/tsconfig bases. Runtime agent behavior is installed as local files;
+Context Forge is consumed as an install-time snapshot by the have-config
+resolver.
 
 ## What lives here
 
 **In scope:**
 
-- Claude Code command fallbacks and Codex-visible workflow skills (`claude/`, `codex/`)
 - HappyVertical service registry and infrastructure docs (`docs/`, `services/`)
 - Organization agent instruction snippets (`agent-doc-snippets/`)
+- Profile-specific commands and skills, such as Hermes `check-setup`
+  (`profiles/`)
 - Agent manifests consumed by the have-config resolver (`hv/manifest.json`,
   `profiles/*/manifest.json`)
 - Shared lint / format / tsconfig configs as published npm packages
@@ -29,6 +31,8 @@ is consumed as an install-time snapshot by the have-config resolver.
 
 - Runnable tools — these get their own repos (see
   [`happyvertical/pr-review`](https://github.com/happyvertical/pr-review))
+- Generic personal workflows such as `ship` and `review-cycle`; those live in
+  dotfiles and are consumed here as the lowest-priority baseline
 - Per-repo specifics (e.g. anytown's
   `apps/dashboard/docs/ad-network.md`)
 - Anything used by exactly one project
@@ -65,28 +69,6 @@ have-config/
 ├── pnpm-workspace.yaml
 ├── .changeset/                      # versioning + publish manifests
 │   └── config.json
-├── claude/                          # Claude Code marketplace
-│   ├── .claude-plugin/
-│   │   └── marketplace.json
-│   └── have/                        # the `have` plugin
-│       ├── .claude-plugin/
-│       │   └── plugin.json
-│       └── commands/
-│           ├── ship.md              # /have:ship fallback
-│           └── review-cycle.md      # /have:review-cycle fallback
-├── codex/                           # Codex marketplace
-│   └── plugins/
-│       └── have/                    # the `have` plugin
-│           ├── .codex-plugin/
-│           │   └── plugin.json
-│           ├── commands/
-│           │   ├── ship.md          # /have:ship fallback
-│           │   └── review-cycle.md  # /have:review-cycle fallback
-│           └── skills/              # Codex fallback skills
-│               ├── ship/
-│               │   └── SKILL.md     # have:ship
-│               └── review-cycle/
-│                   └── SKILL.md     # have:review-cycle
 └── packages/                        # published npm configs
     ├── eslint-config/               # @happyvertical/eslint-config
     ├── prettier-config/             # @happyvertical/prettier-config
@@ -131,7 +113,7 @@ See each package's README for usage details:
 
 Configs are versioned via Changesets and published on merge to `main`.
 
-## Plugin install (agent workflows)
+## Agent Bootstrap
 
 ```bash
 git clone https://github.com/happyvertical/have-config.git ~/Work/happyvertical/repos/have-config
@@ -145,22 +127,13 @@ cd ~/Work/happyvertical/repos/have-config
    unless `--skip-dotfiles` or `HAVE_CONFIG_SKIP_DOTFILES=1` is set.
 2. Clones [`happyvertical/pr-review`](https://github.com/happyvertical/pr-review)
    if missing, adds `pr-review/bin` to the current install PATH.
-3. Registers this repo as a marketplace for both Claude Code and Codex.
-4. Installs the `have` plugin in both agents.
-5. Resolves have-config, active profile, Context Forge snapshot, and local
-   overrides into local generated agent files.
-6. Optionally symlinks the cached plugin install back to the live repo
-   path for in-place editing (`./install.sh --live`).
+3. Resolves dotfiles, have-config, active profile, Context Forge snapshot, and
+   local overrides into local generated agent files.
 
-After install, Claude Code has:
-
-- `/have:ship` — end-to-end shipping pipeline
-- `/have:review-cycle` — multi-tool review/fix/retest loop
-
-Codex has equivalent skills:
-
-- `have:ship` — end-to-end shipping pipeline
-- `have:review-cycle` — multi-tool review/fix/retest loop
+Dotfiles contributes generic baseline workflows such as `ship` and
+`review-cycle` through its `agent/manifest.json`. have-config contributes
+HappyVertical organization standards, service playbooks, service registry data,
+and profile-specific additions.
 
 Hermes agents additionally get local generated commands/skills:
 
@@ -171,10 +144,11 @@ Hermes agents additionally get local generated commands/skills:
 
 The have-config installer composes agent behavior in this order:
 
-1. have-config organization standard
-2. active profile defaults, such as Hermes
-3. Context Forge install-time snapshot
-4. machine-local overrides
+1. dotfiles baseline workflows
+2. have-config organization standard
+3. active profile defaults, such as Hermes
+4. Context Forge install-time snapshot
+5. machine-local overrides
 
 For command and skill conflicts, later layers win. For AGENTS and CLAUDE
 behavior, sections are cumulative and assembled in layer order.
@@ -191,25 +165,22 @@ Hermes profile detection uses explicit environment first:
 - `~/.hermes/profile.json` or `~/.hermes/.profile-hermes`
 
 When Hermes is active, generated files and reports default under `~/.hermes`.
+Local overrides default to `~/.config/hv/overrides` for workstations and
+`~/.hermes/overrides` for Hermes agents. The installer creates templates there
+but never deletes or rewrites existing override files. On first install,
+existing unmanaged global `AGENTS.md` / `CLAUDE.md` files are adopted into that
+override directory before generated docs are linked.
 
-Edits to fallback files are picked up:
-
-- **Live mode** (`install.sh --live`): edits are immediately visible to
-  running sessions via symlink. May need re-linking after
-  `claude plugin update` rewrites the cache.
-- **Standard mode**: edits require `claude plugin update have@have-config`
-  for Claude, or rerunning `./install.sh` to refresh the Codex plugin cache.
-
-The Claude command files and Codex `skills/` files are org fallback definitions.
-Context Forge snapshots and local overrides may replace them during install.
+Edits to dotfiles, have-config, profile files, Context Forge snapshots, or
+local overrides are picked up by rerunning `./install.sh`.
 
 ## Companion tool
 
-The shipping/review commands generate review prompts via
+The baseline shipping/review workflows can generate review prompts via
 [`pr-review`](https://github.com/happyvertical/pr-review). pr-review stays
 a standalone tool because it has a broader audience (anyone running
-pre-PR review with any LLM, regardless of harness). have-config wraps
-pr-review in opinionated workflow commands; pr-review itself is unopinionated.
+pre-PR review with any LLM, regardless of harness). have-config ensures the
+tool is available while organization standards remain in this repo.
 
 ## License
 

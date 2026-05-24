@@ -3,10 +3,11 @@
 
 The resolver composes these layers:
 
-1. have-config organization standard
-2. optional profile defaults, such as Hermes
-3. Context Forge install-time snapshot
-4. machine-local overrides
+1. dotfiles baseline workflows
+2. have-config organization standard
+3. optional profile defaults, such as Hermes
+4. Context Forge install-time snapshot
+5. machine-local overrides
 
 Commands and skills use winner-takes-all resolution by layer priority. Agent
 documents are cumulative and assembled in layer order.
@@ -27,6 +28,7 @@ from typing import Any
 
 
 LAYER_PRIORITIES = {
+    "dotfiles": 10,
     "have-config": 20,
     "profile": 25,
     "contextforge": 30,
@@ -397,8 +399,19 @@ def is_managed_target(path: Path, generated_root: Path, repo_roots: list[Path]) 
     return False
 
 
-def link_target(src: Path, target: Path, generated_root: Path, repo_roots: list[Path], dry_run: bool, report: list[str]) -> None:
+def link_target(
+    src: Path,
+    target: Path,
+    generated_root: Path,
+    repo_roots: list[Path],
+    dry_run: bool,
+    report: list[str],
+    allow_unmanaged_dry_run: bool = False,
+) -> None:
     if not is_managed_target(target, generated_root, repo_roots):
+        if dry_run and allow_unmanaged_dry_run:
+            report.append(f"- would link `{target}` -> `{src}` after adopting existing local file")
+            return
         report.append(f"- blocked managed link `{target}`; existing file is not managed by hv")
         return
     if dry_run:
@@ -667,9 +680,25 @@ def materialize(
             ensure_parent(dest)
             dest.write_text(content, encoding="utf-8")
         if target in {"agents", "codex"}:
-            link_target(dest, home_dir / ".codex" / "AGENTS.md", output_dir, repo_roots, dry_run, report)
+            link_target(
+                dest,
+                home_dir / ".codex" / "AGENTS.md",
+                output_dir,
+                repo_roots,
+                dry_run,
+                report,
+                allow_unmanaged_dry_run=True,
+            )
         if target == "claude":
-            link_target(dest, home_dir / ".claude" / "CLAUDE.md", output_dir, repo_roots, dry_run, report)
+            link_target(
+                dest,
+                home_dir / ".claude" / "CLAUDE.md",
+                output_dir,
+                repo_roots,
+                dry_run,
+                report,
+                allow_unmanaged_dry_run=True,
+            )
     return report
 
 
@@ -708,13 +737,46 @@ def ensure_local_override_templates(local_dir: Path, dry_run: bool) -> list[str]
                     "  to generated global instructions.",
                     "",
                     "Local overrides win over Context Forge snapshots, profile defaults,",
-                    "and have-config. Keep them intentional and review the install report after",
+                    "have-config, and dotfiles. Keep them intentional and review the install report after",
                     "each update.",
                     "",
                 ]
             ),
             encoding="utf-8",
         )
+    return report
+
+
+def adopt_existing_agent_docs(
+    home_dir: Path,
+    local_dir: Path,
+    generated_root: Path,
+    repo_roots: list[Path],
+    dry_run: bool,
+) -> list[str]:
+    report: list[str] = []
+    doc_targets = [
+        (home_dir / ".codex" / "AGENTS.md", local_dir / "agent-docs" / "AGENTS.md"),
+        (home_dir / ".claude" / "CLAUDE.md", local_dir / "agent-docs" / "CLAUDE.md"),
+    ]
+
+    for target, override_path in doc_targets:
+        if not target.exists() and not target.is_symlink():
+            continue
+        if is_managed_target(target, generated_root, repo_roots):
+            continue
+        if override_path.exists():
+            report.append(
+                f"- blocked adoption of `{target}`; local override already exists at `{override_path}`"
+            )
+            continue
+        if dry_run:
+            report.append(f"- would adopt existing `{target}` into `{override_path}`")
+            continue
+        ensure_parent(override_path)
+        shutil.move(str(target), str(override_path))
+        report.append(f"- adopted existing `{target}` into `{override_path}`")
+
     return report
 
 
@@ -727,7 +789,7 @@ def ensure_hermes_home(hermes_dir: Path, active_profiles: list[str], dry_run: bo
         report.append(f"- would ensure Hermes profile directories under `{hermes_dir}`")
         return report
 
-    for directory in [hermes_dir, hermes_dir / "local", hermes_dir / "generated"]:
+    for directory in [hermes_dir, hermes_dir / "overrides", hermes_dir / "generated"]:
         directory.mkdir(parents=True, exist_ok=True)
 
     profile_path = hermes_dir / "profile.json"
@@ -737,7 +799,7 @@ def ensure_hermes_home(hermes_dir: Path, active_profiles: list[str], dry_run: bo
                 "profile": "hermes",
                 "managed_by": "have-config",
                 "updated_at": datetime.now(timezone.utc).isoformat(),
-                "local_overrides": str(hermes_dir / "local"),
+                "local_overrides": str(hermes_dir / "overrides"),
             },
             indent=2,
             sort_keys=True,
@@ -753,12 +815,13 @@ def main() -> int:
     detected_profiles, detection_notes = detect_profiles(home_default)
     active_profiles_default = ",".join(detected_profiles)
     hermes_active = "hermes" in detected_profiles
-    hv_config_dir = os.environ.get("HV_CONFIG_DIR", "~/.hermes" if hermes_active else "~/.config/happyvertical")
+    hv_config_dir = os.environ.get("HV_CONFIG_DIR", "~/.hermes" if hermes_active else "~/.config/hv")
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--dotfiles-dir", default=os.environ.get("DOTFILES_DIR", "~/Work/willgriffin/repos/dotfiles"))
     parser.add_argument("--have-config-dir", default=os.environ.get("HAVE_CONFIG_DIR", os.getcwd()))
     parser.add_argument("--profiles", default=os.environ.get("HV_AGENT_PROFILE", active_profiles_default))
     parser.add_argument("--contextforge-dir", default=os.environ.get("HV_CONTEXTFORGE_SNAPSHOT_DIR", f"{hv_config_dir}/contextforge"))
-    parser.add_argument("--local-overrides-dir", default=os.environ.get("HV_LOCAL_OVERRIDES_DIR", f"{hv_config_dir}/local"))
+    parser.add_argument("--local-overrides-dir", default=os.environ.get("HV_LOCAL_OVERRIDES_DIR", f"{hv_config_dir}/overrides"))
     parser.add_argument("--output-dir", default=os.environ.get("HV_GENERATED_DIR", f"{hv_config_dir}/generated"))
     parser.add_argument("--home-dir", default="~")
     parser.add_argument("--lock-path", default=os.environ.get("HV_AGENT_LOCK", f"{hv_config_dir}/agent-lock.json"))
@@ -766,6 +829,7 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
+    dotfiles = Path(args.dotfiles_dir).expanduser().resolve()
     have_config = Path(args.have_config_dir).expanduser().resolve()
     active_profiles = split_profiles(args.profiles)
     contextforge = Path(args.contextforge_dir).expanduser().resolve()
@@ -775,11 +839,15 @@ def main() -> int:
     lock_path = Path(args.lock_path).expanduser().resolve()
     report_path = Path(args.report_path).expanduser().resolve()
 
-    link_report = ensure_local_override_templates(local, args.dry_run)
     hermes_dir = Path(os.environ.get("HERMES_HOME", str(home_dir / ".hermes"))).expanduser().resolve()
+    repo_roots = [dotfiles, have_config, hermes_dir]
+
+    link_report = ensure_local_override_templates(local, args.dry_run)
     link_report.extend(ensure_hermes_home(hermes_dir, active_profiles, args.dry_run))
+    link_report.extend(adopt_existing_agent_docs(home_dir, local, output_dir, repo_roots, args.dry_run))
 
     layers = [
+        manifest_layer("dotfiles", dotfiles, "agent/manifest.json", LAYER_PRIORITIES["dotfiles"]),
         manifest_layer("have-config", have_config, "hv/manifest.json", LAYER_PRIORITIES["have-config"]),
     ]
     for profile in active_profiles:
@@ -821,7 +889,6 @@ def main() -> int:
         if any(doc_target_matches(target, snippet.targets) for snippet in docs)
     }
 
-    repo_roots = [have_config, hermes_dir]
     link_report.extend(materialize(resolved, doc_outputs, output_dir, home_dir, repo_roots, args.dry_run))
 
     if not args.dry_run:
