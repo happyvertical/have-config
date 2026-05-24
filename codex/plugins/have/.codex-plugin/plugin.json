@@ -1,7 +1,7 @@
 {
   "name": "have",
   "version": "0.1.1",
-  "description": "HappyVertical agent workflow adapters for Codex. Provides skills for have:ship and have:review-cycle by loading the authoritative workflow prompts/resources from ContextForge.",
+  "description": "HappyVertical agent workflow fallbacks for Codex. Provides skills for have:ship and have:review-cycle when no higher-priority Context Forge snapshot or local override is installed.",
   "author": {
     "name": "Will Griffin",
     "email": "buddyrandom@gmail.com",
@@ -23,8 +23,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "have — HappyVertical Workflows",
-    "shortDescription": "ContextForge-backed review and shipping workflows for HappyVertical projects",
-    "longDescription": "Provides Codex-visible skills for have:review-cycle and have:ship. The skills are thin adapters that load the authoritative workflow prompts/resources from ContextForge in the Happy Vertical team.",
+    "shortDescription": "Review and shipping workflows for HappyVertical projects",
+    "longDescription": "Provides Codex-visible fallback skills for have:review-cycle and have:ship. The have-config resolver may replace these with Context Forge snapshots, active profile defaults, or local overrides during install.",
     "developerName": "Will Griffin",
     "category": "Coding",
     "capabilities": [

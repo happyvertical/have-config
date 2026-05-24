@@ -1,0 +1,89 @@
+{
+  "schema": "https://happyvertical.com/service-registry/v1",
+  "services": [
+    {
+      "id": "email",
+      "name": "HappyVertical email",
+      "purpose": "Per-user and per-agent identity",
+      "url": null,
+      "auth": "Per account; credentials stay in Warden or local environment.",
+      "cli": {
+        "status": "account-specific"
+      }
+    },
+    {
+      "id": "idp",
+      "name": "HappyVertical IDP",
+      "purpose": "Identity provider and SSO",
+      "url": "https://idp.happyvertical.com",
+      "auth": "Per-account SSO session.",
+      "cli": {
+        "status": "browser-or-session",
+        "notes": "Verify reachability and authenticated account access with available browser, connector, or local session."
+      }
+    },
+    {
+      "id": "warden",
+      "name": "Warden",
+      "purpose": "Password and shared secret access",
+      "url": "https://warden.happyvertical.com",
+      "auth": "Per-account Warden access.",
+      "cli": {
+        "status": "credential-source",
+        "notes": "Use approved Warden access or local secret integration; never print secret values."
+      }
+    },
+    {
+      "id": "oxicloud",
+      "name": "OxiCloud",
+      "purpose": "File sharing",
+      "url": "https://drive.happyvertical.com",
+      "auth": "WebDAV credentials from Warden/local environment.",
+      "cli": {
+        "status": "supported",
+        "tool": "rclone"
+      }
+    },
+    {
+      "id": "vikunja",
+      "name": "Vikunja",
+      "purpose": "Project management",
+      "url": "https://todo.happyvertical.com",
+      "auth": "Per-account API token from Warden/local environment.",
+      "cli": {
+        "status": "server-cli-only",
+        "notes": "The official Vikunja CLI is for server/container administration; no standard remote task CLI is selected yet."
+      }
+    },
+    {
+      "id": "stoat",
+      "name": "Stoat",
+      "purpose": "Chat and collaboration",
+      "url": "https://stoat.happyvertical.com",
+      "auth": "Per-account credentials.",
+      "cli": {
+        "status": "none-selected"
+      }
+    },
+    {
+      "id": "bifrost",
+      "name": "Bifrost",
+      "purpose": "Gateway",
+      "url": "https://bifrost.happyvertical.com",
+      "auth": "Per-account or service-specific credentials.",
+      "cli": {
+        "status": "none-selected"
+      }
+    },
+    {
+      "id": "contextforge",
+      "name": "Context Forge",
+      "purpose": "Dynamic prompts, resources, and memory",
+      "url": "https://context.happyvertical.com",
+      "auth": "Per-account or agent Context Forge access.",
+      "cli": {
+        "status": "snapshot-source"
+      }
+    }
+  ]
+}

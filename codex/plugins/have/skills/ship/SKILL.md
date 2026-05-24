@@ -2,18 +2,26 @@
 name: ship
 description: Use when the user invokes /ship, /have:ship, have:ship, or asks to ship current work using HappyVertical's standard workflow.
 metadata:
-  short-description: Run HappyVertical's ContextForge ship workflow
+  short-description: Run HappyVertical's ship workflow
 ---
 
 # Have Ship
 
-This Codex skill is only an adapter. The authoritative workflow lives in ContextForge.
+Prepare the current branch for a ready-to-review pull request using
+HappyVertical standards.
 
-Load and follow the Happy Vertical Team prompt:
+1. Inspect the working tree, branch, upstream state, project instructions, and
+   documented validation commands.
+2. Remove accidental noise, generated clutter, debug instrumentation, and
+   unrelated changes from the proposed diff.
+3. Confirm docs are updated when behavior, interfaces, config, ops, or
+   developer workflow changed.
+4. Run the narrowest meaningful validation first, then broader validation before
+   opening or updating the PR.
+5. Review the final diff for secrets, unrelated files, and avoidable churn.
+6. Create or update a ready-for-review PR with a concise description, validation
+   results, and any known risks.
+7. Watch CI and fix simple failures until the branch is reviewable.
 
-- Prompt: `have-ship`
-- Resource: `have://happyvertical/workflows/ship`
-
-Use ContextForge MCP prompts/resources when available. If prompt invocation is unavailable, read the resource by URI. The resource text contains `encoding: base64` and a `payload_base64:` block; decode that payload as UTF-8 markdown and follow it exactly as the ship workflow.
-
-If ContextForge is unavailable, the prompt is missing, or the resource cannot be read or decoded, stop and report the ContextForge access problem instead of falling back to a stale local workflow.
+If a Context Forge snapshot or local override replaced this skill during
+install, follow the generated installed skill instead of this org fallback.

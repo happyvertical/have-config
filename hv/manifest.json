@@ -1,0 +1,178 @@
+{
+  "schema": "https://happyvertical.com/hv-agent-manifest/v1",
+  "layer": "have-config",
+  "priority": 20,
+  "agent_docs": [
+    {
+      "id": "happyvertical.org-standards",
+      "targets": ["agents", "claude"],
+      "path": "agent-doc-snippets/happyvertical-standards.md"
+    },
+    {
+      "id": "happyvertical.agent-playbook",
+      "targets": ["agents", "claude"],
+      "path": "docs/agent-playbook.md"
+    }
+  ],
+  "commands": [
+    {
+      "agent": "claude",
+      "name": "ship",
+      "path": "claude/have/commands/ship.md",
+      "description": "HappyVertical shipping workflow"
+    },
+    {
+      "agent": "claude",
+      "name": "review-cycle",
+      "path": "claude/have/commands/review-cycle.md",
+      "description": "HappyVertical review/fix/retest workflow"
+    },
+    {
+      "agent": "codex",
+      "name": "ship",
+      "path": "codex/plugins/have/commands/ship.md",
+      "description": "HappyVertical shipping workflow"
+    },
+    {
+      "agent": "codex",
+      "name": "review-cycle",
+      "path": "codex/plugins/have/commands/review-cycle.md",
+      "description": "HappyVertical review/fix/retest workflow"
+    }
+  ],
+  "skills": [
+    {
+      "agent": "codex",
+      "name": "ship",
+      "path": "codex/plugins/have/skills/ship",
+      "description": "HappyVertical shipping workflow"
+    },
+    {
+      "agent": "codex",
+      "name": "review-cycle",
+      "path": "codex/plugins/have/skills/review-cycle",
+      "description": "HappyVertical review/fix/retest workflow"
+    }
+  ],
+  "env_requirements": [
+    {
+      "capability": "happyvertical-identity",
+      "vars": ["HV_AGENT_EMAIL"],
+      "default_enabled": false,
+      "description": "Per-user or per-agent HappyVertical account identity."
+    },
+    {
+      "capability": "idp",
+      "vars": ["HV_AGENT_EMAIL"],
+      "default_enabled": false,
+      "description": "HappyVertical IDP account access."
+    },
+    {
+      "capability": "warden",
+      "vars": ["HV_WARDEN_URL"],
+      "default_enabled": false,
+      "description": "Warden credential access. Passwords stay in Warden/local auth."
+    },
+    {
+      "capability": "vikunja",
+      "vars": ["HV_VIKUNJA_URL", "HV_VIKUNJA_TOKEN"],
+      "default_enabled": false,
+      "description": "Vikunja project-management API access."
+    },
+    {
+      "capability": "oxicloud",
+      "vars": ["HV_OXICLOUD_WEBDAV_URL", "HV_OXICLOUD_USER"],
+      "default_enabled": false,
+      "description": "OxiCloud WebDAV access. Passwords should come from Warden."
+    },
+    {
+      "capability": "contextforge",
+      "vars": ["HV_CONTEXTFORGE_SNAPSHOT_DIR"],
+      "default_enabled": false,
+      "description": "Local install-time snapshot exported from context.happyvertical.com."
+    }
+  ],
+  "services": [
+    {
+      "id": "email",
+      "name": "HappyVertical email",
+      "url": "mailto:",
+      "purpose": "Per-user and per-agent identity.",
+      "cli": {
+        "status": "account-specific",
+        "notes": "Use local mail tooling if needed; account credentials stay out of git."
+      }
+    },
+    {
+      "id": "idp",
+      "name": "HappyVertical IDP",
+      "url": "https://idp.happyvertical.com",
+      "purpose": "Identity provider and SSO.",
+      "cli": {
+        "status": "browser-or-session",
+        "notes": "Verify reachability and authenticated account access with available browser, connector, or local session."
+      }
+    },
+    {
+      "id": "warden",
+      "name": "Warden",
+      "url": "https://warden.happyvertical.com",
+      "purpose": "Password and shared secret access.",
+      "cli": {
+        "status": "credential-source",
+        "notes": "Use approved Warden access or local secret integration; never print secret values."
+      }
+    },
+    {
+      "id": "oxicloud",
+      "name": "OxiCloud",
+      "url": "https://drive.happyvertical.com",
+      "purpose": "File sharing via OxiCloud.",
+      "cli": {
+        "status": "supported",
+        "tool": "rclone",
+        "notes": "Use WebDAV configuration with credentials from Warden/local env."
+      }
+    },
+    {
+      "id": "vikunja",
+      "name": "Vikunja",
+      "url": "https://todo.happyvertical.com",
+      "purpose": "Project management.",
+      "cli": {
+        "status": "server-cli-only",
+        "notes": "The official Vikunja CLI is for server/container administration; no standard remote task CLI is selected yet."
+      }
+    },
+    {
+      "id": "stoat",
+      "name": "Stoat",
+      "url": "https://stoat.happyvertical.com",
+      "purpose": "Chat and collaboration.",
+      "cli": {
+        "status": "none-selected",
+        "notes": "No standard CLI selected yet."
+      }
+    },
+    {
+      "id": "bifrost",
+      "name": "Bifrost",
+      "url": "https://bifrost.happyvertical.com",
+      "purpose": "Gateway.",
+      "cli": {
+        "status": "none-selected",
+        "notes": "Gateway operations are documented before automation."
+      }
+    },
+    {
+      "id": "contextforge",
+      "name": "Context Forge",
+      "url": "https://context.happyvertical.com",
+      "purpose": "Dynamic prompts, resources, and memory.",
+      "cli": {
+        "status": "snapshot-source",
+        "notes": "Export snapshots for install-time materialization."
+      }
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "have-config",
-  "description": "HappyVertical shared agent configuration: ContextForge-backed command adapters, MCP servers, hooks, and other cross-repo configuration consumed by ≥2 projects.",
+  "description": "HappyVertical shared agent configuration: command fallbacks, service playbooks, MCP servers, hooks, and other cross-repo configuration consumed by two or more projects.",
   "owner": {
     "name": "Will Griffin",
     "email": "buddyrandom@gmail.com"
@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "have",
-      "description": "HappyVertical ContextForge-backed command adapters for Claude Code: /have:ship and /have:review-cycle.",
+      "description": "HappyVertical command fallbacks for Claude Code: /have:ship and /have:review-cycle.",
       "author": {
         "name": "Will Griffin",
         "email": "buddyrandom@gmail.com"
