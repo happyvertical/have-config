@@ -17,7 +17,7 @@ REPORT_PATH="$TMP_DIR/install-report.md"
 mkdir -p "$DOTFILES_DIR/agent" "$DOTFILES_DIR/.agents/commands/codex" \
     "$DOTFILES_DIR/.agents/commands/claude" "$DOTFILES_DIR/.agents/skills/ship" \
     "$DOTFILES_DIR/.agents/skills/review-cycle" "$HAVE_CONFIG_DIR/hv" "$HAVE_CONFIG_DIR/profiles/hermes/commands/codex" \
-    "$HAVE_CONFIG_DIR/profiles/hermes/skills/check-setup" "$CONTEXTFORGE_DIR" \
+    "$HAVE_CONFIG_DIR/profiles/hermes/skills/check-setup" "$HAVE_CONFIG_DIR/services" "$CONTEXTFORGE_DIR" \
     "$LOCAL_DIR/commands/codex" "$LOCAL_DIR/skills/codex/ship" "$HOME_DIR"
 mkdir -p "$HOME_DIR/.claude"
 
@@ -130,11 +130,27 @@ cat > "$HAVE_CONFIG_DIR/profiles/hermes/skills/check-setup/SKILL.md" <<'EOF'
 hermes check setup skill
 EOF
 
+cat > "$HAVE_CONFIG_DIR/services/services.json" <<'JSON'
+{
+  "schema": "https://happyvertical.com/service-registry/v1",
+  "services": [
+    {
+      "id": "fixture-service",
+      "name": "Fixture Service",
+      "url": "https://fixture.example.test",
+      "cli": {
+        "status": "test-only"
+      }
+    }
+  ]
+}
+JSON
+
 cat > "$CONTEXTFORGE_DIR/manifest.json" <<'JSON'
 {
   "schema": "https://happyvertical.com/hv-agent-manifest/v1",
   "layer": "contextforge",
-  "priority": 30,
+  "priority": "dynamic",
   "commands": [
     {
       "agent": "codex",
@@ -196,6 +212,10 @@ grep -q "local claude note" "$HOME_DIR/.claude/CLAUDE.md"
 grep -q "potential must/must-not conflict" "$REPORT_PATH"
 grep -q '"key": "codex:command:review-cycle"' "$LOCK_PATH"
 grep -q '`dotfiles` priority 10: available' "$REPORT_PATH"
+grep -q "invalid declared priority 'dynamic' ignored; using fixed 30" "$REPORT_PATH"
+grep -q '`fixture-service` https://fixture.example.test CLI: test-only (source: services/services.json)' "$REPORT_PATH"
+grep -q '"id": "fixture-service"' "$LOCK_PATH"
+grep -q 'skills/codex/<name>/SKILL.md' "$LOCAL_DIR/README.md"
 
 if HV_ENABLED_CAPABILITIES=identity python3 "$ROOT_DIR/scripts/hv-agent-resolver.py" \
     --dotfiles-dir "$DOTFILES_DIR" \
@@ -209,5 +229,18 @@ if HV_ENABLED_CAPABILITIES=identity python3 "$ROOT_DIR/scripts/hv-agent-resolver
     echo "Expected missing HV_AGENT_EMAIL to fail when identity capability is enabled" >&2
     exit 1
 fi
+
+EXPLICIT_HOME="$TMP_DIR/explicit-home"
+mkdir -p "$EXPLICIT_HOME"
+EXPLICIT_HOME="$(cd "$EXPLICIT_HOME" && pwd -P)"
+HOME="$EXPLICIT_HOME" python3 "$ROOT_DIR/scripts/hv-agent-resolver.py" \
+    --profiles hermes \
+    --dotfiles-dir "$DOTFILES_DIR" \
+    --have-config-dir "$HAVE_CONFIG_DIR" \
+    --contextforge-dir "$CONTEXTFORGE_DIR" \
+    --dry-run >/dev/null
+
+grep -q '`profile:hermes` priority 25: available' "$EXPLICIT_HOME/.hermes/install-report.md"
+grep -q "would ensure local override directories under \`$EXPLICIT_HOME/.hermes/overrides\`" "$EXPLICIT_HOME/.hermes/install-report.md"
 
 echo "hv-agent-resolver tests passed"

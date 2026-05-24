@@ -10,8 +10,13 @@ that needs it.
 
 ## Slash commands and agent surfaces
 
-- [x] `claude/` — Claude Code `have` plugin
-- [x] `codex/plugins/have/` — Codex `have` plugin
+- [x] `hv/manifest.json` — org-owned agent docs, env requirements, and service
+      metadata consumed by the resolver
+- [x] `profiles/hermes/` — Hermes-only commands and skills such as
+      `check-setup`
+- [ ] `claude/` / `codex/` packaged surfaces, only if a future second
+      consumer needs marketplace/plugin distribution instead of generated local
+      files
 - [ ] `cursor/` — Cursor commands, when there's a second project using
       Cursor as the primary IDE
 

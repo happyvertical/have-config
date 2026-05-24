@@ -29,14 +29,27 @@ while [[ $# -gt 0 ]]; do
 done
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+default_hv_config_dir() {
+  if [[ "${HV_AGENT_PROFILE:-${AGENT_PROFILE:-}}" == *hermes* || -n "${HERMES:-}" || -n "${HERMES_AGENT:-}" || -n "${HERMES_AGENT_ID:-}" || -n "${HERMES_HOME:-}" ]]; then
+    printf '%s\n' "${HERMES_HOME:-$HOME/.hermes}"
+  else
+    printf '%s\n' "$HOME/.config/hv"
+  fi
+}
+
+HAVE_CONFIG_HOME="${HV_CONFIG_DIR:-$(default_hv_config_dir)}"
 PR_REVIEW_DIR="${PR_REVIEW_DIR:-$HOME/Work/happyvertical/repos/pr-review}"
-DOTFILES_DIR="${DOTFILES_DIR:-$HOME/Work/willgriffin/repos/dotfiles}"
+DOTFILES_DIR="${DOTFILES_DIR:-$HAVE_CONFIG_HOME/dotfiles}"
 DOTFILES_REPO_URL="${DOTFILES_REPO_URL:-git@github.com:willgriffin/dotfiles.git}"
 DOTFILES_FALLBACK_REPO_URL="https://github.com/willgriffin/dotfiles.git"
 
-if [[ -d "$PR_REVIEW_DIR/bin" && ":$PATH:" != *":$PR_REVIEW_DIR/bin:"* ]]; then
-  export PATH="$PR_REVIEW_DIR/bin:$PATH"
-fi
+prepend_pr_review_path() {
+  if [[ -d "$PR_REVIEW_DIR/bin" && ":$PATH:" != *":$PR_REVIEW_DIR/bin:"* ]]; then
+    export PATH="$PR_REVIEW_DIR/bin:$PATH"
+  fi
+}
+
+prepend_pr_review_path
 
 cyan() { printf "\033[36m%s\033[0m\n" "$*"; }
 green() { printf "\033[32m%s\033[0m\n" "$*"; }
@@ -96,16 +109,19 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
     cyan "  Dry-run: would clone pr-review to $PR_REVIEW_DIR"
   fi
 else
-if [[ ! -d "$PR_REVIEW_DIR" ]]; then
-  cyan "  Cloning pr-review to ${PR_REVIEW_DIR}..."
-  mkdir -p "$(dirname "$PR_REVIEW_DIR")"
-  git clone https://github.com/happyvertical/pr-review.git "$PR_REVIEW_DIR"
-else
-  cyan "  Already cloned at $PR_REVIEW_DIR (skipping)."
-fi
+  if [[ ! -d "$PR_REVIEW_DIR" ]]; then
+    cyan "  Cloning pr-review to ${PR_REVIEW_DIR}..."
+    mkdir -p "$(dirname "$PR_REVIEW_DIR")"
+    git clone https://github.com/happyvertical/pr-review.git "$PR_REVIEW_DIR"
+  else
+    cyan "  Already cloned at $PR_REVIEW_DIR (skipping)."
+  fi
 fi
 
-if ! command -v pr-review >/dev/null 2>&1; then
+prepend_pr_review_path
+if [[ "$DRY_RUN" -eq 1 && ! -d "$PR_REVIEW_DIR/bin" ]]; then
+  cyan "  Dry-run: would add $PR_REVIEW_DIR/bin to the current install PATH."
+elif ! command -v pr-review >/dev/null 2>&1; then
   red "  pr-review not on \$PATH. Add this to your shell rc:"
   red "    export PATH=\"$PR_REVIEW_DIR/bin:\$PATH\""
 else

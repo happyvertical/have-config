@@ -194,8 +194,18 @@ def manifest_layer(name: str, root: Path, manifest_name: str, default_priority: 
         data = load_json(manifest)
         notes: list[str] = []
         declared_priority = data.get("priority")
-        if declared_priority is not None and int(declared_priority) != default_priority:
-            notes.append(f"declared priority {declared_priority} ignored; using fixed {default_priority}")
+        if declared_priority is not None:
+            try:
+                declared_priority_int = int(declared_priority)
+                if isinstance(declared_priority, bool):
+                    raise ValueError
+            except (TypeError, ValueError):
+                notes.append(
+                    f"invalid declared priority {declared_priority!r} ignored; using fixed {default_priority}"
+                )
+            else:
+                if declared_priority_int != default_priority:
+                    notes.append(f"declared priority {declared_priority} ignored; using fixed {default_priority}")
         return SourceLayer(name, root, manifest, default_priority, True, notes)
     if name == "local" and root.exists():
         return SourceLayer(name, root, None, default_priority, True, [f"no {manifest}; using convention-based overrides"])
@@ -277,7 +287,6 @@ def collect_local_conventions(root: Path, priority: int) -> tuple[list[Candidate
     docs: list[DocSnippet] = []
 
     skill_roots = [
-        ("codex", root / "skills"),
         ("codex", root / "skills" / "codex"),
         ("claude", root / "skills" / "claude"),
     ]
@@ -335,6 +344,26 @@ def collect_local_conventions(root: Path, priority: int) -> tuple[list[Candidate
             )
 
     return candidates, docs
+
+
+def collect_service_registry(root: Path) -> list[dict[str, Any]]:
+    registry = root / "services" / "services.json"
+    if not registry.exists():
+        return []
+    data = load_json(registry)
+    return [{**service, "source": "services/services.json"} for service in data.get("services", [])]
+
+
+def dedupe_services(services: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    keyed: dict[str, dict[str, Any]] = {}
+    anonymous: list[dict[str, Any]] = []
+    for service in services:
+        service_id = service.get("id")
+        if service_id:
+            keyed[service_id] = service
+        else:
+            anonymous.append(service)
+    return [keyed[key] for key in sorted(keyed)] + anonymous
 
 
 def ensure_parent(path: Path) -> None:
@@ -580,7 +609,9 @@ def write_report(
     for service in services:
         cli = service.get("cli", {})
         status = cli.get("status", "documented")
-        lines.append(f"- `{service.get('id')}` {service.get('url', '')} CLI: {status}")
+        source = service.get("source", "unknown")
+        url = service.get("url") or ""
+        lines.append(f"- `{service.get('id')}` {url} CLI: {status} (source: {source})")
 
     if link_report:
         lines.extend(["", "## Managed Links", ""])
@@ -730,7 +761,8 @@ def ensure_local_override_templates(local_dir: Path, dry_run: bool) -> list[str]
                     "Files in this directory are machine-local and are never overwritten by",
                     "the have-config installer.",
                     "",
-                    "- `skills/<name>/SKILL.md` overrides Codex skills.",
+                    "- `skills/codex/<name>/SKILL.md` overrides Codex skills.",
+                    "- `skills/claude/<name>/SKILL.md` overrides Claude skills when supported.",
                     "- `commands/claude/<name>.md` overrides Claude commands.",
                     "- `commands/codex/<name>.md` overrides Codex commands.",
                     "- `agent-docs/AGENTS.md` and `agent-docs/CLAUDE.md` are appended",
@@ -814,12 +846,19 @@ def main() -> int:
     home_default = Path("~").expanduser().resolve()
     detected_profiles, detection_notes = detect_profiles(home_default)
     active_profiles_default = ",".join(detected_profiles)
-    hermes_active = "hermes" in detected_profiles
-    hv_config_dir = os.environ.get("HV_CONFIG_DIR", "~/.hermes" if hermes_active else "~/.config/hv")
+    pre_parser = argparse.ArgumentParser(add_help=False)
+    pre_parser.add_argument("--profiles", default=os.environ.get("HV_AGENT_PROFILE", active_profiles_default))
+    pre_args, _ = pre_parser.parse_known_args()
+    default_profiles = split_profiles(pre_args.profiles)
+    hermes_active = "hermes" in default_profiles
+    hv_config_dir = os.environ.get(
+        "HV_CONFIG_DIR",
+        os.environ.get("HERMES_HOME", "~/.hermes") if hermes_active else "~/.config/hv",
+    )
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dotfiles-dir", default=os.environ.get("DOTFILES_DIR", "~/Work/willgriffin/repos/dotfiles"))
+    parser.add_argument("--dotfiles-dir", default=os.environ.get("DOTFILES_DIR", f"{hv_config_dir}/dotfiles"))
     parser.add_argument("--have-config-dir", default=os.environ.get("HAVE_CONFIG_DIR", os.getcwd()))
-    parser.add_argument("--profiles", default=os.environ.get("HV_AGENT_PROFILE", active_profiles_default))
+    parser.add_argument("--profiles", default=pre_args.profiles)
     parser.add_argument("--contextforge-dir", default=os.environ.get("HV_CONTEXTFORGE_SNAPSHOT_DIR", f"{hv_config_dir}/contextforge"))
     parser.add_argument("--local-overrides-dir", default=os.environ.get("HV_LOCAL_OVERRIDES_DIR", f"{hv_config_dir}/overrides"))
     parser.add_argument("--output-dir", default=os.environ.get("HV_GENERATED_DIR", f"{hv_config_dir}/generated"))
@@ -876,6 +915,8 @@ def main() -> int:
         docs.extend(layer_docs)
         env_requirements.extend({**item, "source": layer.name} for item in layer_env)
         services.extend({**item, "source": layer.name} for item in layer_services)
+    services.extend(collect_service_registry(have_config))
+    services = dedupe_services(services)
 
     local_candidates, local_docs = collect_local_conventions(local, LAYER_PRIORITIES["local"])
     candidates.extend(local_candidates)

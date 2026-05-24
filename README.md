@@ -130,6 +130,10 @@ cd ~/Work/happyvertical/repos/have-config
 3. Resolves dotfiles, have-config, active profile, Context Forge snapshot, and
    local overrides into local generated agent files.
 
+By default, have-config caches dotfiles under `~/.config/hv/dotfiles` for
+workstations and `~/.hermes/dotfiles` for Hermes agents. Set `DOTFILES_DIR` to
+use a personal checkout instead.
+
 Dotfiles contributes generic baseline workflows such as `ship` and
 `review-cycle` through its `agent/manifest.json`. have-config contributes
 HappyVertical organization standards, service playbooks, service registry data,
