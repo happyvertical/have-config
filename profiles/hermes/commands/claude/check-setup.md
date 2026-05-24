@@ -46,6 +46,17 @@ Run these checks:
      HappyVertical memory bank.
    - Verify `HV_CONTEXTFORGE_SNAPSHOT_DIR` exists when Context Forge snapshots
      are expected for install-time materialization.
+7. Zulip chat gateway
+   - Confirm `https://chat.happyvertical.com` is reachable.
+   - Confirm `ZULIP_SITE_URL`, `ZULIP_EMAIL`, and `ZULIP_API_KEY` are present
+     when Zulip chat response is expected; do not print their values.
+   - Report whether authorization is configured with `ZULIP_ALLOWED_USERS` or
+     explicit `ZULIP_ALLOW_ALL_USERS=true`; otherwise mark response readiness as
+     `Blocked` even if authentication succeeds.
+   - If a Hermes Zulip gateway adapter is configured, verify `GET /api/v1/users/me`
+     succeeds for the bot and that the `/api/v1/register` + `/api/v1/events`
+     long-poll listener can start without auth errors.
+   - Report missing bot credentials as `Blocked` with the variable names.
 
 If a check cannot be performed noninteractively, mark it `Blocked` and state
 the missing credential, connector, environment variable, CLI, or local config.

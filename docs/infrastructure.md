@@ -13,7 +13,8 @@ per user or per agent and must stay out of git.
 | Warden | `https://warden.happyvertical.com` | Password and shared secret access | Credential source; never print secret values |
 | OxiCloud | `https://drive.happyvertical.com` | File sharing | Use WebDAV-capable tooling such as `rclone` |
 | Vikunja | `https://todo.happyvertical.com` | Project management | Official CLI is server/container admin only; have-config provides a reusable Hermes notification watcher |
-| Stoat | `https://stoat.happyvertical.com` | Chat and collaboration | No standard CLI selected yet |
+| Zulip | `https://chat.happyvertical.com` | Primary team chat and agent-response channel | Hermes gateway long-poll adapter with bot credentials |
+| Stoat | `https://stoat.happyvertical.com` | Legacy chat and collaboration | Superseded by Zulip unless explicitly requested |
 | Bifrost | `https://bifrost.happyvertical.com` | Gateway | No standard CLI selected yet |
 | Context Forge | `https://context.happyvertical.com` | Prompts, resources, and memory | Export install-time snapshots |
 

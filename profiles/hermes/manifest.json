@@ -33,9 +33,21 @@
   "env_requirements": [
     {
       "capability": "hermes",
-      "vars": ["HV_AGENT_EMAIL"],
+      "vars": [
+        "HV_AGENT_EMAIL"
+      ],
       "default_enabled": false,
       "description": "Per-agent HappyVertical account identity for Hermes."
+    },
+    {
+      "capability": "zulip",
+      "vars": [
+        "ZULIP_SITE_URL",
+        "ZULIP_EMAIL",
+        "ZULIP_API_KEY"
+      ],
+      "default_enabled": false,
+      "description": "Hermes gateway Zulip bot credentials and routing for long-poll chat response."
     }
   ],
   "services": []

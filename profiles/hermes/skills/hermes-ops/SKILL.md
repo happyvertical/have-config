@@ -60,6 +60,8 @@ Required local environment:
   repository access matter
 - `HV_HERMES_STATE_DIR` when watcher cursor files should live somewhere other
   than `$XDG_STATE_HOME/hv` or `~/.local/state/hv`
+- `ZULIP_SITE_URL`, `ZULIP_EMAIL`, and `ZULIP_API_KEY` when the Hermes gateway
+  should join HappyVertical Zulip and long-poll for immediate chat responses
 
 Recommended cadence:
 
@@ -69,3 +71,20 @@ Recommended cadence:
 Watcher state files are cursors, not task records. If a cursor is stale or
 corrupt, move it aside and run the watcher once to initialize from the current
 remote state.
+
+## Zulip Gateway Setup
+
+HappyVertical's primary chat is Zulip at `https://chat.happyvertical.com`.
+When a Hermes agent is expected to respond there immediately, configure a Zulip
+bot account in the local Hermes `.env` or approved secret source:
+
+- `ZULIP_SITE_URL=https://chat.happyvertical.com`
+- `ZULIP_EMAIL`
+- `ZULIP_API_KEY`
+- optional `ZULIP_ALLOWED_USERS`, `ZULIP_ALLOW_ALL_USERS`, `ZULIP_HOME_CHANNEL`,
+  and `ZULIP_REQUIRE_MENTION`
+
+The Hermes gateway adapter should use Zulip's `/api/v1/register` and
+`/api/v1/events` long-poll loop. If credentials are missing, mark Zulip setup as
+blocked with the missing variable names; never ask the user to paste the secret
+into task comments or logs.
