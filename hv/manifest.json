@@ -16,6 +16,22 @@
   ],
   "commands": [],
   "skills": [],
+  "scripts": [
+    {
+      "agent": "no-agent",
+      "name": "hv-hermes-vikunja-task-updates",
+      "path": "reusable-scripts/hermes/no-agent/hv-hermes-vikunja-task-updates",
+      "executable": true,
+      "description": "Poll Vikunja task updates for Hermes operators without requiring an agent runtime."
+    },
+    {
+      "agent": "no-agent",
+      "name": "hv-hermes-github-cricket-issues",
+      "path": "reusable-scripts/hermes/no-agent/hv-hermes-github-cricket-issues",
+      "executable": true,
+      "description": "Poll GitHub open issues labeled cricket without requiring an agent runtime."
+    }
+  ],
   "env_requirements": [
     {
       "capability": "happyvertical-identity",
@@ -103,7 +119,7 @@
       "purpose": "Project management.",
       "cli": {
         "status": "server-cli-only",
-        "notes": "The official Vikunja CLI is for server/container administration; no standard remote task CLI is selected yet."
+        "notes": "The official Vikunja CLI is for server/container administration; have-config provides hv-hermes-vikunja-task-updates for notification polling."
       }
     },
     {

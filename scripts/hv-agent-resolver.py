@@ -9,8 +9,8 @@ The resolver composes these layers:
 4. Context Forge install-time snapshot
 5. machine-local overrides
 
-Commands and skills use winner-takes-all resolution by layer priority. Agent
-documents are cumulative and assembled in layer order.
+Commands, skills, and reusable scripts use winner-takes-all resolution by layer
+priority. Agent documents are cumulative and assembled in layer order.
 """
 
 from __future__ import annotations
@@ -264,6 +264,24 @@ def collect_manifest(layer: SourceLayer) -> tuple[list[Candidate], list[DocSnipp
                 )
             )
 
+    for item in data.get("scripts", []):
+        path = resolve_path(root, item.get("path"))
+        content = item.get("content")
+        name = item["name"]
+        candidates.append(
+            Candidate(
+                kind="script",
+                agent=item.get("agent", "no-agent"),
+                name=name,
+                layer=layer_name,
+                priority=priority,
+                path=path,
+                content=content,
+                source=source_label(layer_name, root, path, content),
+                metadata={k: v for k, v in item.items() if k not in {"path", "content"}},
+            )
+        )
+
     for item in data.get("agent_docs", []):
         path = resolve_path(root, item.get("path"))
         content = item.get("content")
@@ -397,6 +415,15 @@ def write_candidate(candidate: Candidate, dest: Path) -> None:
     replace_tree(candidate.path, dest)
 
 
+def write_script_candidate(candidate: Candidate, dest: Path) -> None:
+    """Write a script candidate as a file, including inline content."""
+    if candidate.content is not None:
+        ensure_parent(dest)
+        dest.write_text(candidate.content.rstrip() + "\n", encoding="utf-8")
+        return
+    write_candidate(candidate, dest)
+
+
 def is_managed_target(path: Path, generated_root: Path, repo_roots: list[Path]) -> bool:
     if not path.exists() and not path.is_symlink():
         return True
@@ -424,6 +451,8 @@ def is_managed_target(path: Path, generated_root: Path, repo_roots: list[Path]) 
     if target.name == "CLAUDE.md" and ".claude" in parts:
         return True
     if "commands" in parts and (".claude" in parts or ".codex" in parts):
+        return True
+    if ".local" in parts and "bin" in parts:
         return True
     return False
 
@@ -577,7 +606,7 @@ def write_report(
         for note in layer.notes:
             lines.append(f"  - {note}")
 
-    lines.extend(["", "## Resolved Commands And Skills", ""])
+    lines.extend(["", "## Resolved Commands, Skills, And Scripts", ""])
     for key in sorted(resolved):
         items = resolved[key]
         winner = selected_candidate(items)
@@ -682,7 +711,7 @@ def materialize(
     report: list[str] = []
     if not dry_run:
         output_dir.mkdir(parents=True, exist_ok=True)
-        for child in ["skills", "commands"]:
+        for child in ["skills", "commands", "scripts"]:
             target = output_dir / child
             if target.exists():
                 shutil.rmtree(target)
@@ -703,6 +732,14 @@ def materialize(
                 link_target(dest, home_dir / ".claude" / "commands" / f"{winner.name}.md", output_dir, repo_roots, dry_run, report)
             elif winner.agent == "codex":
                 link_target(dest, home_dir / ".codex" / "commands" / f"{winner.name}.md", output_dir, repo_roots, dry_run, report)
+        elif winner.kind == "script":
+            dest = output_dir / "scripts" / winner.name
+            if not dry_run:
+                write_script_candidate(winner, dest)
+                if winner.metadata.get("executable") is True:
+                    dest.chmod(dest.stat().st_mode | 0o111)
+            if winner.metadata.get("executable") is True:
+                link_target(dest, home_dir / ".local" / "bin" / winner.name, output_dir, repo_roots, dry_run, report)
 
     for target, content in doc_outputs.items():
         filename = TARGETS[target]

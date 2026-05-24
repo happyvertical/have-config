@@ -14,6 +14,8 @@ that needs it.
       metadata consumed by the resolver
 - [x] `profiles/hermes/` — Hermes-only commands and skills such as
       `check-setup`
+- [x] `reusable-scripts/hermes/no-agent/` — reusable notification scripts for
+      Hermes Vikunja task updates and GitHub `cricket`-labeled issue updates
 - [ ] `claude/` / `codex/` packaged surfaces, only if a future second
       consumer needs marketplace/plugin distribution instead of generated local
       files
@@ -28,6 +30,8 @@ that needs it.
 ## Agent hooks
 
 - [ ] `hooks/` — pre-/post-tool-use hooks consumed by ≥2 repos.
+- [x] `scripts` manifest entries — reusable operational scripts materialized
+      by the resolver and linked into `~/.local/bin` when executable
 
 ## Lint / format / build bases
 
@@ -79,5 +83,7 @@ Pick when the first consumer pair exists, not before.
 - [x] `hv/manifest.json` — source manifest consumed by have-config
 - [x] `profiles/hermes/manifest.json` — Hermes-only defaults such as
       `check-setup`
+- [x] Hermes `hermes-ops` skill — scheduled Vikunja pickup state,
+      blocked-task recovery, and watcher setup
 - [ ] Publish an exporter from Context Forge into the manifest shape expected by
       have-config (`manifest.json` with `skills`, `commands`, and `agent_docs`).

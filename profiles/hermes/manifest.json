@@ -22,6 +22,12 @@
       "name": "check-setup",
       "path": "skills/check-setup",
       "description": "Verify HappyVertical service access for this Hermes agent"
+    },
+    {
+      "agent": "codex",
+      "name": "hermes-ops",
+      "path": "skills/hermes-ops",
+      "description": "Operate Hermes scheduled pickup, blocked-task recovery, and no-agent watchers"
     }
   ],
   "env_requirements": [

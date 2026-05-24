@@ -17,7 +17,8 @@ REPORT_PATH="$TMP_DIR/install-report.md"
 mkdir -p "$DOTFILES_DIR/agent" "$DOTFILES_DIR/.agents/commands/codex" \
     "$DOTFILES_DIR/.agents/commands/claude" "$DOTFILES_DIR/.agents/skills/ship" \
     "$DOTFILES_DIR/.agents/skills/review-cycle" "$HAVE_CONFIG_DIR/hv" "$HAVE_CONFIG_DIR/profiles/hermes/commands/codex" \
-    "$HAVE_CONFIG_DIR/profiles/hermes/skills/check-setup" "$HAVE_CONFIG_DIR/services" "$CONTEXTFORGE_DIR" \
+    "$HAVE_CONFIG_DIR/profiles/hermes/skills/check-setup" "$HAVE_CONFIG_DIR/reusable-scripts/hermes/no-agent" \
+    "$HAVE_CONFIG_DIR/services" "$CONTEXTFORGE_DIR" \
     "$LOCAL_DIR/commands/codex" "$LOCAL_DIR/skills/codex/ship" "$HOME_DIR"
 mkdir -p "$HOME_DIR/.claude"
 
@@ -83,6 +84,22 @@ cat > "$HAVE_CONFIG_DIR/hv/manifest.json" <<'JSON'
   "priority": 20,
   "commands": [],
   "skills": [],
+  "scripts": [
+    {
+      "agent": "no-agent",
+      "name": "fixture-notify",
+      "path": "reusable-scripts/hermes/no-agent/fixture-notify",
+      "executable": true,
+      "description": "fixture no-agent script"
+    },
+    {
+      "agent": "no-agent",
+      "name": "inline-notify",
+      "content": "#!/usr/bin/env bash\necho inline notify",
+      "executable": true,
+      "description": "inline no-agent script"
+    }
+  ],
   "agent_docs": [
     {
       "id": "have-config.test",
@@ -99,6 +116,11 @@ cat > "$HAVE_CONFIG_DIR/hv/manifest.json" <<'JSON'
   ]
 }
 JSON
+
+cat > "$HAVE_CONFIG_DIR/reusable-scripts/hermes/no-agent/fixture-notify" <<'EOF'
+#!/usr/bin/env bash
+echo fixture notify
+EOF
 
 cat > "$HAVE_CONFIG_DIR/profiles/hermes/manifest.json" <<'JSON'
 {
@@ -191,7 +213,7 @@ cat > "$HOME_DIR/.claude/CLAUDE.md" <<'EOF'
 local claude note
 EOF
 
-HV_AGENT_PROFILE=hermes python3 "$ROOT_DIR/scripts/hv-agent-resolver.py" \
+HV_AGENT_PROFILE=hermes HERMES_HOME="$HOME_DIR/.hermes" python3 "$ROOT_DIR/scripts/hv-agent-resolver.py" \
     --dotfiles-dir "$DOTFILES_DIR" \
     --have-config-dir "$HAVE_CONFIG_DIR" \
     --contextforge-dir "$CONTEXTFORGE_DIR" \
@@ -207,17 +229,26 @@ grep -q "local ship" "$HOME_DIR/.agents/skills/ship/SKILL.md"
 grep -q "dotfiles review-cycle skill" "$HOME_DIR/.agents/skills/review-cycle/SKILL.md"
 grep -q "hermes check setup" "$HOME_DIR/.codex/commands/check-setup.md"
 grep -q "hermes check setup skill" "$HOME_DIR/.agents/skills/check-setup/SKILL.md"
+grep -q "fixture notify" "$OUTPUT_DIR/scripts/fixture-notify"
+grep -q "fixture notify" "$HOME_DIR/.local/bin/fixture-notify"
+test -x "$HOME_DIR/.local/bin/fixture-notify"
+grep -q "inline notify" "$OUTPUT_DIR/scripts/inline-notify"
+grep -q "inline notify" "$HOME_DIR/.local/bin/inline-notify"
+test -x "$HOME_DIR/.local/bin/inline-notify"
+test ! -e "$OUTPUT_DIR/scripts/inline-notify/SKILL.md"
 grep -q "local claude note" "$LOCAL_DIR/agent-docs/CLAUDE.md"
 grep -q "local claude note" "$HOME_DIR/.claude/CLAUDE.md"
 grep -q "potential must/must-not conflict" "$REPORT_PATH"
 grep -q '"key": "codex:command:review-cycle"' "$LOCK_PATH"
+grep -q '"key": "no-agent:script:fixture-notify"' "$LOCK_PATH"
+grep -q '"key": "no-agent:script:inline-notify"' "$LOCK_PATH"
 grep -q '`dotfiles` priority 10: available' "$REPORT_PATH"
 grep -q "invalid declared priority 'dynamic' ignored; using fixed 30" "$REPORT_PATH"
 grep -q '`fixture-service` https://fixture.example.test CLI: test-only (source: services/services.json)' "$REPORT_PATH"
 grep -q '"id": "fixture-service"' "$LOCK_PATH"
 grep -q 'skills/codex/<name>/SKILL.md' "$LOCAL_DIR/README.md"
 
-if HV_ENABLED_CAPABILITIES=identity python3 "$ROOT_DIR/scripts/hv-agent-resolver.py" \
+if HV_ENABLED_CAPABILITIES=identity HERMES_HOME="$TMP_DIR/home-env-failure/.hermes" python3 "$ROOT_DIR/scripts/hv-agent-resolver.py" \
     --dotfiles-dir "$DOTFILES_DIR" \
     --have-config-dir "$HAVE_CONFIG_DIR" \
     --contextforge-dir "$CONTEXTFORGE_DIR" \
@@ -233,7 +264,7 @@ fi
 EXPLICIT_HOME="$TMP_DIR/explicit-home"
 mkdir -p "$EXPLICIT_HOME"
 EXPLICIT_HOME="$(cd "$EXPLICIT_HOME" && pwd -P)"
-HOME="$EXPLICIT_HOME" python3 "$ROOT_DIR/scripts/hv-agent-resolver.py" \
+HOME="$EXPLICIT_HOME" HERMES_HOME="$EXPLICIT_HOME/.hermes" python3 "$ROOT_DIR/scripts/hv-agent-resolver.py" \
     --profiles hermes \
     --dotfiles-dir "$DOTFILES_DIR" \
     --have-config-dir "$HAVE_CONFIG_DIR" \

@@ -34,6 +34,21 @@ The command should verify:
 - `context.happyvertical.com` is reachable and the agent is configured for
   prompts, resources, and memory
 
+## Hermes No-Agent Watchers
+
+The base have-config manifest provides reusable scripts for operational
+notifications that can run from cron, systemd user timers, or another local
+scheduler without an active agent session:
+
+- `hv-hermes-vikunja-task-updates` polls recently updated Vikunja tasks.
+- `hv-hermes-github-cricket-issues` polls open GitHub issues labeled
+  `cricket`.
+
+The resolver materializes these scripts into the generated config tree and
+links executable scripts into `~/.local/bin` when that target is managed by
+have-config. Store API tokens in the local environment or approved secret
+source; do not commit them.
+
 ## Secret Handling
 
 - Use Warden as the sharing standard for account passwords and shared secrets.

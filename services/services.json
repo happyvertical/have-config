@@ -52,7 +52,7 @@
       "auth": "Per-account API token from Warden/local environment.",
       "cli": {
         "status": "server-cli-only",
-        "notes": "The official Vikunja CLI is for server/container administration; no standard remote task CLI is selected yet."
+        "notes": "The official Vikunja CLI is for server/container administration; have-config provides hv-hermes-vikunja-task-updates for notification polling."
       }
     },
     {
