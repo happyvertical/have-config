@@ -1,10 +1,13 @@
 ---
-description: "Run the HappyVertical review-cycle workflow from ContextForge."
+name: review-cycle
+description: Use when the user invokes /review-cycle, /have:review-cycle, have:review-cycle, or asks to run HappyVertical's bounded multi-reviewer review, fix, and retest loop before shipping.
+metadata:
+  short-description: Run HappyVertical's ContextForge review cycle
 ---
 
-# /have:review-cycle
+# Have Review Cycle
 
-This local command is only an adapter. The authoritative workflow lives in ContextForge.
+This Codex skill is only an adapter. The authoritative workflow lives in ContextForge.
 
 Load and follow the Happy Vertical Team prompt:
 

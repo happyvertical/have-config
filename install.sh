@@ -7,12 +7,12 @@
 #   2. Registers this repo as a marketplace for Claude Code.
 #   3. Installs the `have` plugin in Claude Code.
 #   4. Registers this repo as a marketplace for Codex.
-#   5. (Codex auto-enables installed plugins via marketplace add.)
+#   5. Enables and syncs the `have` plugin cache in Codex.
 #   6. With --live, symlinks the cached plugin installs back to this repo
 #      so edits are immediately visible to running sessions.
 #
 # Usage:
-#   ./install.sh              # standard install (use `plugin update` after edits)
+#   ./install.sh              # standard install (use `plugin update` after adapter edits)
 #   ./install.sh --live       # live mode (cache symlinked to repo)
 #   ./install.sh --uninstall  # remove marketplaces + plugins
 #   ./install.sh -h           # help
@@ -34,6 +34,7 @@ done
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PR_REVIEW_DIR="${PR_REVIEW_DIR:-$HOME/Work/happyvertical/repos/pr-review}"
+HAVE_PLUGIN_VERSION="0.1.1"
 
 cyan() { printf "\033[36m%s\033[0m\n" "$*"; }
 green() { printf "\033[32m%s\033[0m\n" "$*"; }
@@ -44,6 +45,7 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
   command -v claude >/dev/null 2>&1 && claude plugin uninstall have@have-config 2>/dev/null || true
   command -v claude >/dev/null 2>&1 && claude plugin marketplace remove have-config 2>/dev/null || true
   command -v codex >/dev/null 2>&1 && codex plugin marketplace remove have-config 2>/dev/null || true
+  rm -rf "$HOME/.codex/plugins/cache/have-config"
   green "Uninstalled."
   exit 0
 fi
@@ -106,7 +108,14 @@ else:
     print("  Enabled have@have-config in ~/.codex/config.toml.")
 PY
 
-  green "  Codex: /have:ship and /have:review-cycle ready (after restart)."
+  CODEX_CACHE="$HOME/.codex/plugins/cache/have-config/have/$HAVE_PLUGIN_VERSION"
+  CODEX_SOURCE="$REPO_ROOT/codex/plugins/have"
+  mkdir -p "$(dirname "$CODEX_CACHE")"
+  rm -rf "$CODEX_CACHE"
+  cp -R "$CODEX_SOURCE" "$CODEX_CACHE"
+  green "  Codex cache synced: $CODEX_CACHE"
+
+  green "  Codex: have:ship and have:review-cycle skills ready (after restart)."
 else
   red "  codex CLI not found; skipping Codex install."
 fi
@@ -116,24 +125,33 @@ if [[ "$LIVE" -eq 1 ]]; then
   cyan "→ Step 4/4: --live mode — symlinking caches to repo"
 
   # Claude cache path: ~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/
-  CLAUDE_CACHE="$HOME/.claude/plugins/cache/have-config/have/0.1.0"
+  CLAUDE_CACHE="$HOME/.claude/plugins/cache/have-config/have/$HAVE_PLUGIN_VERSION"
   CLAUDE_SOURCE="$REPO_ROOT/claude/have"
   if [[ -d "$(dirname "$CLAUDE_CACHE")" ]]; then
     rm -rf "$CLAUDE_CACHE"
     ln -s "$CLAUDE_SOURCE" "$CLAUDE_CACHE"
     green "  Claude cache symlinked: $CLAUDE_CACHE -> $CLAUDE_SOURCE"
-    cyan "  (Edits to $CLAUDE_SOURCE are now live. Re-run --live after 'claude plugin update' which re-clones the cache.)"
+    cyan "  (Adapter edits to $CLAUDE_SOURCE are now live. Workflow body edits happen in ContextForge.)"
   else
     red "  Claude cache dir not found at $(dirname "$CLAUDE_CACHE"); install may have failed."
   fi
 
-  # Codex doesn't expose its cache layout the same way; skip symlink for now.
-  cyan "  Codex: --live not implemented (codex marketplace add appears to read directly from source; edits propagate naturally)."
+  CODEX_CACHE="$HOME/.codex/plugins/cache/have-config/have/$HAVE_PLUGIN_VERSION"
+  CODEX_SOURCE="$REPO_ROOT/codex/plugins/have"
+  if [[ -d "$(dirname "$CODEX_CACHE")" ]]; then
+    rm -rf "$CODEX_CACHE"
+    ln -s "$CODEX_SOURCE" "$CODEX_CACHE"
+    green "  Codex cache symlinked: $CODEX_CACHE -> $CODEX_SOURCE"
+  else
+    red "  Codex cache dir not found at $(dirname "$CODEX_CACHE"); install may have failed."
+  fi
 else
   cyan "→ Step 4/4: skipping --live (pass --live to enable live edits)"
 fi
 
 green ""
-green "Done. Restart Claude / Codex sessions to pick up the new commands."
-green "Try:  /have:review-cycle"
-green "      /have:ship"
+green "Done. Restart Claude / Codex sessions to pick up the workflows."
+green "Claude: /have:review-cycle"
+green "        /have:ship"
+green "Codex:  have:review-cycle"
+green "        have:ship"
