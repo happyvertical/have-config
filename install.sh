@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# install.sh — one-line setup for have-config.
+# install.sh - one-line setup for have-config.
 #
 # Does:
 #   1. Ensures pr-review is cloned and on $PATH.
@@ -41,7 +41,7 @@ green() { printf "\033[32m%s\033[0m\n" "$*"; }
 red() { printf "\033[31m%s\033[0m\n" "$*" >&2; }
 
 if [[ "$UNINSTALL" -eq 1 ]]; then
-  cyan "Uninstalling have plugins…"
+  cyan "Uninstalling have plugins..."
   command -v claude >/dev/null 2>&1 && claude plugin uninstall have@have-config 2>/dev/null || true
   command -v claude >/dev/null 2>&1 && claude plugin marketplace remove have-config 2>/dev/null || true
   command -v codex >/dev/null 2>&1 && codex plugin marketplace remove have-config 2>/dev/null || true
@@ -51,9 +51,9 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
 fi
 
 # 1. pr-review
-cyan "→ Step 1/4: pr-review"
+cyan "Step 1/4: pr-review"
 if [[ ! -d "$PR_REVIEW_DIR" ]]; then
-  cyan "  Cloning pr-review to $PR_REVIEW_DIR…"
+  cyan "  Cloning pr-review to ${PR_REVIEW_DIR}..."
   mkdir -p "$(dirname "$PR_REVIEW_DIR")"
   git clone https://github.com/happyvertical/pr-review.git "$PR_REVIEW_DIR"
 else
@@ -68,7 +68,7 @@ else
 fi
 
 # 2. Claude marketplace + plugin
-cyan "→ Step 2/4: Claude Code marketplace + have plugin"
+cyan "Step 2/4: Claude Code marketplace + have plugin"
 if command -v claude >/dev/null 2>&1; then
   if ! claude plugin marketplace list 2>/dev/null | grep -q "have-config"; then
     claude plugin marketplace add "$REPO_ROOT/claude"
@@ -86,7 +86,7 @@ else
 fi
 
 # 3. Codex marketplace
-cyan "→ Step 3/4: Codex marketplace + have plugin"
+cyan "Step 3/4: Codex marketplace + have plugin"
 if command -v codex >/dev/null 2>&1; then
   # Codex marketplace add registers the marketplace; plugin enablement is
   # config-driven (codex has no `plugin install/enable` CLI). We add the
@@ -122,7 +122,7 @@ fi
 
 # 4. Live mode (optional)
 if [[ "$LIVE" -eq 1 ]]; then
-  cyan "→ Step 4/4: --live mode — symlinking caches to repo"
+  cyan "Step 4/4: --live mode - symlinking caches to repo"
 
   # Claude cache path: ~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/
   CLAUDE_CACHE="$HOME/.claude/plugins/cache/have-config/have/$HAVE_PLUGIN_VERSION"
@@ -146,7 +146,7 @@ if [[ "$LIVE" -eq 1 ]]; then
     red "  Codex cache dir not found at $(dirname "$CODEX_CACHE"); install may have failed."
   fi
 else
-  cyan "→ Step 4/4: skipping --live (pass --live to enable live edits)"
+  cyan "Step 4/4: skipping --live (pass --live to enable live edits)"
 fi
 
 green ""
