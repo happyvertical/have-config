@@ -1,10 +1,13 @@
 ---
-description: "Run the HappyVertical ship workflow from ContextForge."
+name: ship
+description: Use when the user invokes /ship, /have:ship, have:ship, or asks to ship current work using HappyVertical's standard workflow.
+metadata:
+  short-description: Run HappyVertical's ContextForge ship workflow
 ---
 
-# /have:ship
+# Have Ship
 
-This local command is only an adapter. The authoritative workflow lives in ContextForge.
+This Codex skill is only an adapter. The authoritative workflow lives in ContextForge.
 
 Load and follow the Happy Vertical Team prompt:
 

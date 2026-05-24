@@ -2,7 +2,7 @@
   "name": "have-config",
   "interface": {
     "displayName": "HappyVertical Agent Config",
-    "shortDescription": "Cross-repo agent configuration for HappyVertical projects"
+    "shortDescription": "ContextForge-backed cross-repo agent configuration for HappyVertical projects"
   },
   "plugins": [
     {

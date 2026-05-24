@@ -1,7 +1,7 @@
 {
   "name": "have",
-  "version": "0.1.0",
-  "description": "HappyVertical agent commands for Codex. Provides /have:ship (end-to-end shipping pipeline) and /have:review-cycle (multi-tool review loop) for the org's standard pre-PR and PR-creation workflow.",
+  "version": "0.1.1",
+  "description": "HappyVertical agent workflow adapters for Codex. Provides skills for have:ship and have:review-cycle by loading the authoritative workflow prompts/resources from ContextForge.",
   "author": {
     "name": "Will Griffin",
     "email": "buddyrandom@gmail.com",
@@ -12,6 +12,7 @@
   "license": "MIT",
   "keywords": [
     "codex",
+    "skill",
     "slash-command",
     "shipping",
     "review",
@@ -19,10 +20,11 @@
     "happyvertical",
     "pr-review"
   ],
+  "skills": "./skills/",
   "interface": {
-    "displayName": "have — HappyVertical Commands",
-    "shortDescription": "Org-wide review and shipping commands for HappyVertical projects",
-    "longDescription": "Provides /have:review-cycle (multi-tool review loop using codex+claude+copilot) and /have:ship (end-to-end shipping: validate, review, PR, watch CI). Uses pr-review (https://github.com/happyvertical/pr-review) to generate calibrated review prompts. Mirrors the Claude Code version of this plugin.",
+    "displayName": "have — HappyVertical Workflows",
+    "shortDescription": "ContextForge-backed review and shipping workflows for HappyVertical projects",
+    "longDescription": "Provides Codex-visible skills for have:review-cycle and have:ship. The skills are thin adapters that load the authoritative workflow prompts/resources from ContextForge in the Happy Vertical team.",
     "developerName": "Will Griffin",
     "category": "Coding",
     "capabilities": [
@@ -32,8 +34,8 @@
     ],
     "websiteURL": "https://github.com/happyvertical/have-config",
     "defaultPrompt": [
-      "Run /have:review-cycle for repeat reviews and fixes.",
-      "Run /have:ship to validate, review, PR, and watch CI."
+      "Use have:review-cycle for repeat reviews and fixes.",
+      "Use have:ship to validate, review, PR, and watch CI."
     ],
     "brandColor": "#0F766E",
     "screenshots": []

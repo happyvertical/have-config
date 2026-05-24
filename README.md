@@ -3,7 +3,7 @@
 HappyVertical shared cross-repo configuration for agent-assisted development.
 
 This repo is the umbrella for configuration that ≥2 HappyVertical projects
-consume. Today that's slash commands for Claude Code and Codex. Other
+consume. Today that's Claude Code command adapters and Codex workflow skills. Other
 shared config (MCP servers, agent hooks, lint/format/tsconfig bases) will
 land here as second consumers appear.
 
@@ -11,7 +11,7 @@ land here as second consumers appear.
 
 **In scope:**
 
-- Slash commands for Claude Code and Codex (`claude/`, `codex/`)
+- Claude Code command adapters and Codex-visible workflow skills (`claude/`, `codex/`)
 - Shared lint / format / tsconfig configs as published npm packages
   (`packages/eslint-config`, `packages/prettier-config`,
   `packages/tsconfig-base`)
@@ -51,16 +51,21 @@ have-config/
 │       ├── .claude-plugin/
 │       │   └── plugin.json
 │       └── commands/
-│           ├── ship.md              # /have:ship
-│           └── review-cycle.md      # /have:review-cycle
+│           ├── ship.md              # /have:ship adapter
+│           └── review-cycle.md      # /have:review-cycle adapter
 ├── codex/                           # Codex marketplace
 │   └── plugins/
 │       └── have/                    # the `have` plugin
 │           ├── .codex-plugin/
 │           │   └── plugin.json
-│           └── commands/
-│               ├── ship.md          # /have:ship
-│               └── review-cycle.md  # /have:review-cycle
+│           ├── commands/
+│           │   ├── ship.md          # /have:ship adapter
+│           │   └── review-cycle.md  # /have:review-cycle adapter
+│           └── skills/              # Codex adapters to ContextForge
+│               ├── ship/
+│               │   └── SKILL.md     # have:ship
+│               └── review-cycle/
+│                   └── SKILL.md     # have:review-cycle
 └── packages/                        # published npm configs
     ├── eslint-config/               # @happyvertical/eslint-config
     ├── prettier-config/             # @happyvertical/prettier-config
@@ -105,7 +110,7 @@ See each package's README for usage details:
 
 Configs are versioned via Changesets and published on merge to `main`.
 
-## Plugin install (slash commands)
+## Plugin install (agent workflows)
 
 ```bash
 git clone https://github.com/happyvertical/have-config.git ~/Work/happyvertical/repos/have-config
@@ -122,21 +127,45 @@ cd ~/Work/happyvertical/repos/have-config
 4. Optionally symlinks the cached plugin install back to the live repo
    path for in-place editing (`./install.sh --live`).
 
-After install, both agents have:
+After install, Claude Code has:
 
 - `/have:ship` — end-to-end shipping pipeline
 - `/have:review-cycle` — multi-tool review/fix/retest loop
 
+Codex has equivalent skills:
+
+- `have:ship` — end-to-end shipping pipeline
+- `have:review-cycle` — multi-tool review/fix/retest loop
+
 ## Editing
 
-The repo is the source of truth. Edits to `claude/have/commands/*.md` or
-`codex/plugins/have/commands/*.md` are picked up:
+ContextForge is the source of truth for workflow bodies:
+
+| Workflow | Prompt | Resource |
+|---|---|---|
+| Ship | `have-ship` | `have://happyvertical/workflows/ship` |
+| Review cycle | `have-review-cycle` | `have://happyvertical/workflows/review-cycle` |
+
+The resources live in the **Happy Vertical** team at
+`context.happyvertical.com`. They store the workflow markdown as a base64
+payload because ContextForge's default content scanner rejects raw shell-heavy
+workflow markdown. The prompt loaders decode that payload and follow it as the
+authoritative workflow.
+
+Edits to workflow behavior should happen in ContextForge, not in this repo.
+This lets prompt/workflow changes go live without redeploying or reinstalling
+the agent plugins.
+
+Edits to the adapter files are picked up:
 
 - **Live mode** (`install.sh --live`): edits are immediately visible to
   running sessions via symlink. May need re-linking after
   `claude plugin update` rewrites the cache.
 - **Standard mode**: edits require `claude plugin update have@have-config`
-  (and the codex equivalent) to refresh the installed copy.
+  for Claude, or rerunning `./install.sh` to refresh the Codex plugin cache.
+
+The Claude command files and Codex `skills/` files must remain thin adapters.
+Do not put canonical workflow text back into this repo.
 
 ## Companion tool
 
