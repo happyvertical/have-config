@@ -26,6 +26,22 @@ successfully but refuse to respond to users.
 
 ## Runtime expectation
 
+Before starting the gateway, the local Hermes config must enable the Zulip
+platform. Environment variables alone only make credentials available; they do
+not opt the gateway into running the Zulip adapter.
+
+```yaml
+platforms:
+  zulip:
+    enabled: true
+```
+
+Bundled Hermes platform plugins such as Zulip are auto-discovered by Hermes.
+Do not require agents to add `platforms/zulip` or `zulip-platform` to
+`plugins.enabled` unless a local Hermes build explicitly changes bundled plugin
+loading. The canonical setup knob is `platforms.zulip.enabled: true` plus the
+credential env vars above and routing/authorization env vars.
+
 A Hermes Zulip adapter should:
 
 1. Authenticate with Zulip Basic auth using `ZULIP_EMAIL:ZULIP_API_KEY`.
@@ -45,6 +61,7 @@ A Hermes Zulip adapter should:
 
 A non-secret verification pass should report:
 
+- whether Hermes config has `platforms.zulip.enabled: true`
 - whether `ZULIP_SITE_URL`, `ZULIP_EMAIL`, and `ZULIP_API_KEY` are present
 - whether `GET /api/v1/users/me` succeeds for the bot
 - whether a register/events long-poll loop starts without auth errors

@@ -51,6 +51,10 @@ Run these checks:
      are expected for install-time materialization.
 7. Zulip chat gateway
    - Confirm `https://chat.happyvertical.com` is reachable.
+   - Confirm `hermes config path` resolves to a local config file and that it
+     has `platforms.zulip.enabled: true` when Zulip chat response is expected.
+     If only env vars are present, mark gateway readiness as `Blocked` until the
+     platform is enabled.
    - Confirm `ZULIP_SITE_URL`, `ZULIP_EMAIL`, and `ZULIP_API_KEY` are present
      when Zulip chat response is expected; do not print their values.
    - Report whether authorization is configured with `ZULIP_ALLOWED_USERS` or

@@ -84,6 +84,18 @@ bot account in the local Hermes `.env` or approved secret source:
 - optional `ZULIP_ALLOWED_USERS`, `ZULIP_ALLOW_ALL_USERS`, `ZULIP_HOME_CHANNEL`,
   and `ZULIP_REQUIRE_MENTION`
 
+Enable the platform in the local Hermes config as well:
+
+```yaml
+platforms:
+  zulip:
+    enabled: true
+```
+
+For bundled Hermes platform plugins, this config flag is the canonical activation
+step. Do not make agents troubleshoot `plugins.enabled` first; the bundled Zulip
+platform is auto-discovered unless a local Hermes build has explicitly diverged.
+
 The Hermes gateway adapter should use Zulip's `/api/v1/register` and
 `/api/v1/events` long-poll loop. If credentials are missing, mark Zulip setup as
 blocked with the missing variable names; never ask the user to paste the secret
