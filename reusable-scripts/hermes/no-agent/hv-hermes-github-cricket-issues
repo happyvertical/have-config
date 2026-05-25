@@ -1,0 +1,170 @@
+#!/usr/bin/env python3
+"""Poll GitHub cricket-labeled issue updates for no-agent Hermes notifications.
+
+Empty stdout means no change, including initial state seeding.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import urllib.parse
+import urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+DEFAULT_QUERY = "org:happyvertical is:issue is:open label:cricket"
+API = "https://api.github.com"
+PER_PAGE = 100
+MAX_PAGES = 10  # GitHub search exposes at most the first 1000 results.
+
+
+def usage_env() -> str:
+    return """Environment:
+  GITHUB_TOKEN or GH_TOKEN   Optional GitHub token for higher rate limits/private repos.
+  HV_GITHUB_SEARCH_QUERY     Search query. Default: org:happyvertical is:issue is:open label:cricket
+  HV_HERMES_STATE_DIR        State directory. Default: $XDG_STATE_HOME/hv or ~/.local/state/hv
+"""
+
+
+def state_file() -> Path:
+    state_root = os.environ.get("HV_HERMES_STATE_DIR")
+    if not state_root:
+        state_root = os.path.join(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state")), "hv")
+    return Path(state_root) / "hermes-github-cricket-issues.json"
+
+
+def request_json(query: str, token: str, page: int) -> dict[str, Any]:
+    params = urllib.parse.urlencode(
+        {
+            "q": query,
+            "sort": "updated",
+            "order": "desc",
+            "per_page": PER_PAGE,
+            "page": page,
+        }
+    )
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "hv-hermes-github-cricket-issues",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(f"{API}/search/issues?{params}", headers=headers)
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def load_state(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {"initialized": False, "issues": {}}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {"initialized": False, "issues": {}}
+
+
+def save_state(path: Path, state: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
+def issue_key(issue: dict[str, Any]) -> str:
+    repo_url = str(issue.get("repository_url") or "")
+    owner_repo = "/".join(repo_url.rsplit("/", 2)[-2:]) if repo_url else "unknown/unknown"
+    return f"{owner_repo}#{issue.get('number')}"
+
+
+def issue_signature(issue: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": issue.get("id"),
+        "number": issue.get("number"),
+        "title": issue.get("title") or "(untitled)",
+        "state": issue.get("state"),
+        "updated_at": issue.get("updated_at") or "",
+        "url": issue.get("html_url") or "",
+        "repo": "/".join(str(issue.get("repository_url") or "").rsplit("/", 2)[-2:]),
+        "labels": sorted(label.get("name") for label in issue.get("labels", []) if isinstance(label, dict) and label.get("name")),
+    }
+
+
+def fetch_issues(query: str, token: str) -> dict[str, dict[str, Any]]:
+    """Fetch a complete GitHub search snapshot within GitHub's 1000-result cap."""
+    current: dict[str, dict[str, Any]] = {}
+    for page in range(1, MAX_PAGES + 1):
+        payload = request_json(query, token, page)
+        items = payload.get("items", [])
+        if not items:
+            break
+        for issue in items:
+            if not isinstance(issue, dict):
+                continue
+            current[issue_key(issue)] = issue_signature(issue)
+        if len(items) < PER_PAGE:
+            break
+    return current
+
+
+def notify(title: str, body: str) -> None:
+    print(f"{title}\n{body}")
+    notifier = shutil.which("notify-send")
+    if notifier:
+        subprocess.run([notifier, title, body], check=False)
+
+
+def fmt_issue(sig: dict[str, Any]) -> str:
+    bits = [f"{sig.get('repo')}#{sig.get('number')}: {sig.get('title')}"]
+    if sig.get("updated_at"):
+        bits.append(f"updated: {sig['updated_at']}")
+    if sig.get("url"):
+        bits.append(str(sig["url"]))
+    return "\n".join(bits)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__, epilog=usage_env(), formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--dry-run", action="store_true", help="Fetch and diff without writing watcher state")
+    args = parser.parse_args()
+
+    query = os.environ.get("HV_GITHUB_SEARCH_QUERY", DEFAULT_QUERY)
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or ""
+    path = state_file()
+    state = load_state(path)
+    previous: dict[str, dict[str, Any]] = state.get("issues", {})
+    previous_latest = str(state.get("latest_updated_at") or "")
+    initialized = bool(state.get("initialized"))
+
+    current = fetch_issues(query, token)
+    latest = max((sig.get("updated_at") or "" for sig in current.values()), default=previous_latest)
+
+    if initialized:
+        for key, sig in sorted(current.items(), key=lambda kv: (kv[1].get("updated_at") or "", kv[0])):
+            old = previous.get(key)
+            if old is None:
+                notify("New GitHub cricket issue", fmt_issue(sig))
+            elif old != sig:
+                notify("GitHub cricket issue updated", fmt_issue(sig))
+        for key, old in sorted(previous.items()):
+            if key not in current:
+                notify("GitHub cricket issue removed or closed", fmt_issue(old))
+
+    new_state = {
+        "initialized": True,
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "query": query,
+        "latest_updated_at": latest,
+        "issues": current,
+    }
+    if not args.dry_run:
+        save_state(path, new_state)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

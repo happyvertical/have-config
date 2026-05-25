@@ -22,7 +22,8 @@
 - Use `warden.happyvertical.com` for approved password and shared secret access.
 - Use `drive.happyvertical.com` for OxiCloud file sharing.
 - Use `todo.happyvertical.com` for Vikunja project management.
-- Use `stoat.happyvertical.com` for chat and collaboration.
+- Use `chat.happyvertical.com` (Zulip) for primary chat and collaboration; Hermes agents should use bot credentials and long-poll events when chat response is enabled.
+- Treat `stoat.happyvertical.com` as legacy/superseded chat unless a task explicitly asks for Stoat.
 - Use `bifrost.happyvertical.com` as the gateway.
 - Use `context.happyvertical.com` for prompts, resources, and memory snapshots.
 - Hermes agents run `check-setup` after bootstrap or account changes to verify service access.

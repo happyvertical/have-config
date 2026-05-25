@@ -52,17 +52,29 @@
       "auth": "Per-account API token from Warden/local environment.",
       "cli": {
         "status": "server-cli-only",
-        "notes": "The official Vikunja CLI is for server/container administration; no standard remote task CLI is selected yet."
+        "notes": "The official Vikunja CLI is for server/container administration; have-config provides hv-hermes-vikunja-task-updates for notification polling."
       }
     },
     {
       "id": "stoat",
       "name": "Stoat",
-      "purpose": "Chat and collaboration",
+      "purpose": "Legacy chat and collaboration",
       "url": "https://stoat.happyvertical.com",
-      "auth": "Per-account credentials.",
+      "auth": "Per-account credentials when legacy Stoat access is explicitly needed.",
       "cli": {
-        "status": "none-selected"
+        "status": "legacy-or-superseded",
+        "notes": "Zulip at https://chat.happyvertical.com is the current primary chat path."
+      }
+    },
+    {
+      "id": "zulip",
+      "name": "Zulip",
+      "purpose": "Primary team chat and agent-response channel",
+      "url": "https://chat.happyvertical.com",
+      "auth": "Per-agent bot API credentials from Warden/local environment.",
+      "cli": {
+        "status": "hermes-gateway-long-poll",
+        "notes": "Hermes gateway adapters should use Zulip /api/v1/register and /api/v1/events long polling with ZULIP_SITE_URL, ZULIP_EMAIL, and ZULIP_API_KEY."
       }
     },
     {

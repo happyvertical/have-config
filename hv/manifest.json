@@ -5,53 +5,107 @@
   "agent_docs": [
     {
       "id": "happyvertical.org-standards",
-      "targets": ["agents", "claude"],
+      "targets": [
+        "agents",
+        "claude"
+      ],
       "path": "agent-doc-snippets/happyvertical-standards.md"
     },
     {
       "id": "happyvertical.agent-playbook",
-      "targets": ["agents", "claude"],
+      "targets": [
+        "agents",
+        "claude"
+      ],
       "path": "docs/agent-playbook.md"
+    },
+    {
+      "id": "happyvertical.hermes-zulip-gateway",
+      "targets": [
+        "agents",
+        "claude"
+      ],
+      "path": "docs/hermes-zulip-gateway.md"
     }
   ],
   "commands": [],
   "skills": [],
+  "scripts": [
+    {
+      "agent": "no-agent",
+      "name": "hv-hermes-vikunja-task-updates",
+      "path": "reusable-scripts/hermes/no-agent/hv-hermes-vikunja-task-updates",
+      "executable": true,
+      "description": "Poll Vikunja task updates for Hermes operators without requiring an agent runtime."
+    },
+    {
+      "agent": "no-agent",
+      "name": "hv-hermes-github-cricket-issues",
+      "path": "reusable-scripts/hermes/no-agent/hv-hermes-github-cricket-issues",
+      "executable": true,
+      "description": "Poll GitHub open issues labeled cricket without requiring an agent runtime."
+    }
+  ],
   "env_requirements": [
     {
       "capability": "happyvertical-identity",
-      "vars": ["HV_AGENT_EMAIL"],
+      "vars": [
+        "HV_AGENT_EMAIL"
+      ],
       "default_enabled": false,
       "description": "Per-user or per-agent HappyVertical account identity."
     },
     {
       "capability": "idp",
-      "vars": ["HV_AGENT_EMAIL"],
+      "vars": [
+        "HV_AGENT_EMAIL"
+      ],
       "default_enabled": false,
       "description": "HappyVertical IDP account access."
     },
     {
       "capability": "warden",
-      "vars": ["HV_WARDEN_URL"],
+      "vars": [
+        "HV_WARDEN_URL"
+      ],
       "default_enabled": false,
       "description": "Warden credential access. Passwords stay in Warden/local auth."
     },
     {
       "capability": "vikunja",
-      "vars": ["HV_VIKUNJA_URL", "HV_VIKUNJA_TOKEN"],
+      "vars": [
+        "HV_VIKUNJA_URL",
+        "HV_VIKUNJA_TOKEN"
+      ],
       "default_enabled": false,
       "description": "Vikunja project-management API access."
     },
     {
       "capability": "oxicloud",
-      "vars": ["HV_OXICLOUD_WEBDAV_URL", "HV_OXICLOUD_USER"],
+      "vars": [
+        "HV_OXICLOUD_WEBDAV_URL",
+        "HV_OXICLOUD_USER"
+      ],
       "default_enabled": false,
       "description": "OxiCloud WebDAV access. Passwords should come from Warden."
     },
     {
       "capability": "contextforge",
-      "vars": ["HV_CONTEXTFORGE_SNAPSHOT_DIR"],
+      "vars": [
+        "HV_CONTEXTFORGE_SNAPSHOT_DIR"
+      ],
       "default_enabled": false,
       "description": "Local install-time snapshot exported from context.happyvertical.com."
+    },
+    {
+      "capability": "zulip",
+      "vars": [
+        "ZULIP_SITE_URL",
+        "ZULIP_EMAIL",
+        "ZULIP_API_KEY"
+      ],
+      "default_enabled": false,
+      "description": "Zulip bot API access for Hermes gateway long-poll messaging."
     }
   ],
   "services": [
@@ -103,7 +157,7 @@
       "purpose": "Project management.",
       "cli": {
         "status": "server-cli-only",
-        "notes": "The official Vikunja CLI is for server/container administration; no standard remote task CLI is selected yet."
+        "notes": "The official Vikunja CLI is for server/container administration; have-config provides hv-hermes-vikunja-task-updates for notification polling."
       }
     },
     {
@@ -112,8 +166,18 @@
       "url": "https://stoat.happyvertical.com",
       "purpose": "Chat and collaboration.",
       "cli": {
-        "status": "none-selected",
-        "notes": "No standard CLI selected yet."
+        "status": "legacy-or-superseded",
+        "notes": "Zulip at https://chat.happyvertical.com is the current primary chat path; keep Stoat notes only for legacy context."
+      }
+    },
+    {
+      "id": "zulip",
+      "name": "Zulip",
+      "url": "https://chat.happyvertical.com",
+      "purpose": "Primary team chat and agent-response channel.",
+      "cli": {
+        "status": "hermes-gateway-long-poll",
+        "notes": "Hermes agents should use a Zulip bot account with ZULIP_SITE_URL, ZULIP_EMAIL, and ZULIP_API_KEY; the gateway adapter consumes /api/v1/register and /api/v1/events long polling."
       }
     },
     {

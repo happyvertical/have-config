@@ -12,8 +12,9 @@ per user or per agent and must stay out of git.
 | HappyVertical IDP | `https://idp.happyvertical.com` | Identity provider and SSO | Verify through browser/session or available connector |
 | Warden | `https://warden.happyvertical.com` | Password and shared secret access | Credential source; never print secret values |
 | OxiCloud | `https://drive.happyvertical.com` | File sharing | Use WebDAV-capable tooling such as `rclone` |
-| Vikunja | `https://todo.happyvertical.com` | Project management | Official CLI is server/container admin only; no remote task CLI selected yet |
-| Stoat | `https://stoat.happyvertical.com` | Chat and collaboration | No standard CLI selected yet |
+| Vikunja | `https://todo.happyvertical.com` | Project management | Official CLI is server/container admin only; have-config provides a reusable Hermes notification watcher |
+| Zulip | `https://chat.happyvertical.com` | Primary team chat and agent-response channel | Hermes gateway long-poll adapter with bot credentials |
+| Stoat | `https://stoat.happyvertical.com` | Legacy chat and collaboration | Superseded by Zulip unless explicitly requested |
 | Bifrost | `https://bifrost.happyvertical.com` | Gateway | No standard CLI selected yet |
 | Context Forge | `https://context.happyvertical.com` | Prompts, resources, and memory | Export install-time snapshots |
 
@@ -32,3 +33,10 @@ Context Forge is the dynamic source for organization prompt and resource policy.
 Installers should materialize snapshots into local generated files and record
 the selected content hash in `agent-lock.json`. Runtime agent behavior should
 not require live Context Forge access.
+
+## Reusable Operational Scripts
+
+have-config can materialize reusable operational scripts declared in
+`hv/manifest.json`. Current Hermes no-agent scripts poll Vikunja task updates
+and GitHub open issues labeled `cricket`; credentials must come from local
+environment variables or approved secret tooling.

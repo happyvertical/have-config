@@ -5,7 +5,8 @@ HappyVertical shared cross-repo configuration for agent-assisted development.
 This repo is the umbrella for configuration that ≥2 HappyVertical projects
 consume. Today that's organization standards, service registry docs, agent
 instruction snippets, profile-specific commands/skills, and shared
-lint/format/tsconfig bases. Runtime agent behavior is installed as local files;
+lint/format/tsconfig bases. Runtime agent behavior and reusable operational
+scripts are installed as local files;
 Context Forge is consumed as an install-time snapshot by the have-config
 resolver.
 
@@ -19,6 +20,8 @@ resolver.
   (`profiles/`)
 - Agent manifests consumed by the have-config resolver (`hv/manifest.json`,
   `profiles/*/manifest.json`)
+- Reusable operational scripts consumed by ≥2 Hermes/cricket workflows
+  (`reusable-scripts/`)
 - Shared lint / format / tsconfig configs as published npm packages
   (`packages/eslint-config`, `packages/prettier-config`,
   `packages/tsconfig-base`)
@@ -51,6 +54,8 @@ have-config/
 ├── TODO.md                          # planned additions, with consumer count
 ├── hv/
 │   └── manifest.json                # organization source manifest
+├── reusable-scripts/
+│   └── hermes/no-agent/             # reusable scripts for schedulers/watchers
 ├── profiles/
 │   └── hermes/
 │       ├── manifest.json            # Hermes-only commands and skills
@@ -145,6 +150,15 @@ Hermes agents additionally get local generated commands/skills:
 
 - `/check-setup` / `check-setup` — verifies agent access to HappyVertical
   services
+- `hermes-ops` — documents scheduled Vikunja pickup state, blocked-task
+  recovery, and watcher setup
+
+The base manifest also installs reusable no-agent scripts when executable
+script links are managed:
+
+- `hv-hermes-vikunja-task-updates` — polls Vikunja task updates
+- `hv-hermes-github-cricket-issues` — polls GitHub open issues labeled
+  `cricket`
 
 ### Hermes Agent Bootstrap
 
@@ -195,6 +209,8 @@ The have-config installer composes agent behavior in this order:
 
 For command and skill conflicts, later layers win. For AGENTS and CLAUDE
 behavior, sections are cumulative and assembled in layer order.
+Reusable scripts use the same layer priority model and are materialized under
+the generated config tree; executable scripts are linked into `~/.local/bin`.
 
 Context Forge remains the dynamic organization policy source, but it is not a
 runtime dependency for normal agent behavior. Export it into

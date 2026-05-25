@@ -2,6 +2,8 @@
 *.swp
 *.swo
 node_modules/
+__pycache__/
+*.py[cod]
 
 # Copilot CLI session transcripts can leak into the working dir if
 # probe prompts reference filenames. Per `gh copilot -- --help`:
