@@ -62,8 +62,28 @@ Run these checks:
      `Blocked` even if authentication succeeds.
    - If a Hermes Zulip gateway adapter is configured, verify `GET /api/v1/users/me`
      succeeds for the configured account and that the `/api/v1/register` + `/api/v1/events`
-     long-poll path starts without auth errors.
+     long-poll listener can start without auth errors.
    - Report missing Zulip account API credentials as `Blocked` with the variable names.
+8. Hermes Dev Team Mode
+   - If Dev Team Mode is expected, confirm the local Hermes config has
+     `dev_team.enabled: true`; otherwise mark it `Skipped`.
+   - Confirm the manager identity resolves from `dev_team.manager_identity`,
+     `ZULIP_EMAIL`, or `HV_AGENT_EMAIL`.
+   - Confirm Vikunja access is available because main project boards and the
+     per-manager project are the source of truth.
+   - Confirm the configured manager project name follows
+     `Hermes Manager - <email>`.
+   - Confirm missing main-board buckets can be provisioned by the Hermes
+     runtime. Setup checks should report missing buckets but not require manual
+     creation.
+   - Confirm `HV_HERMES_WORKER_COMMAND` or an equivalent
+     `dev_team.worker_command` is configured before worker dispatch is marked
+     ready.
+   - Confirm repo search roots, worktree root, and integration root are
+     configured and point outside repo-tracked source directories unless the
+     local task explicitly requires otherwise.
+   - If a dev server URL is configured for the active project or task, verify it
+     is reachable from the local network.
 
 If a check cannot be performed noninteractively, mark it `Blocked` and state
 the missing credential, connector, environment variable, CLI, or local config.

@@ -26,6 +26,14 @@
         "claude"
       ],
       "path": "docs/hermes-zulip-gateway.md"
+    },
+    {
+      "id": "happyvertical.hermes-dev-team-mode",
+      "targets": [
+        "agents",
+        "claude"
+      ],
+      "path": "docs/hermes-dev-team-mode.md"
     }
   ],
   "commands": [],

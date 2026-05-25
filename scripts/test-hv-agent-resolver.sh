@@ -17,7 +17,8 @@ REPORT_PATH="$TMP_DIR/install-report.md"
 mkdir -p "$DOTFILES_DIR/agent" "$DOTFILES_DIR/.agents/commands/codex" \
     "$DOTFILES_DIR/.agents/commands/claude" "$DOTFILES_DIR/.agents/skills/ship" \
     "$DOTFILES_DIR/.agents/skills/review-cycle" "$HAVE_CONFIG_DIR/hv" "$HAVE_CONFIG_DIR/profiles/hermes/commands/codex" \
-    "$HAVE_CONFIG_DIR/profiles/hermes/skills/check-setup" "$HAVE_CONFIG_DIR/reusable-scripts/hermes/no-agent" \
+    "$HAVE_CONFIG_DIR/profiles/hermes/skills/check-setup" "$HAVE_CONFIG_DIR/profiles/hermes/skills/hermes-manager" \
+    "$HAVE_CONFIG_DIR/reusable-scripts/hermes/no-agent" \
     "$HAVE_CONFIG_DIR/services" "$CONTEXTFORGE_DIR" \
     "$LOCAL_DIR/commands/codex" "$LOCAL_DIR/skills/codex/ship" "$HOME_DIR"
 mkdir -p "$HOME_DIR/.claude"
@@ -139,6 +140,11 @@ cat > "$HAVE_CONFIG_DIR/profiles/hermes/manifest.json" <<'JSON'
       "agent": "codex",
       "name": "check-setup",
       "path": "skills/check-setup"
+    },
+    {
+      "agent": "codex",
+      "name": "hermes-manager",
+      "path": "skills/hermes-manager"
     }
   ]
 }
@@ -150,6 +156,10 @@ EOF
 
 cat > "$HAVE_CONFIG_DIR/profiles/hermes/skills/check-setup/SKILL.md" <<'EOF'
 hermes check setup skill
+EOF
+
+cat > "$HAVE_CONFIG_DIR/profiles/hermes/skills/hermes-manager/SKILL.md" <<'EOF'
+hermes manager skill
 EOF
 
 cat > "$HAVE_CONFIG_DIR/services/services.json" <<'JSON'
@@ -229,6 +239,7 @@ grep -q "local ship" "$HOME_DIR/.agents/skills/ship/SKILL.md"
 grep -q "dotfiles review-cycle skill" "$HOME_DIR/.agents/skills/review-cycle/SKILL.md"
 grep -q "hermes check setup" "$HOME_DIR/.codex/commands/check-setup.md"
 grep -q "hermes check setup skill" "$HOME_DIR/.agents/skills/check-setup/SKILL.md"
+grep -q "hermes manager skill" "$HOME_DIR/.agents/skills/hermes-manager/SKILL.md"
 grep -q "fixture notify" "$OUTPUT_DIR/scripts/fixture-notify"
 grep -q "fixture notify" "$HOME_DIR/.local/bin/fixture-notify"
 test -x "$HOME_DIR/.local/bin/fixture-notify"
@@ -240,6 +251,7 @@ grep -q "local claude note" "$LOCAL_DIR/agent-docs/CLAUDE.md"
 grep -q "local claude note" "$HOME_DIR/.claude/CLAUDE.md"
 grep -q "potential must/must-not conflict" "$REPORT_PATH"
 grep -q '"key": "codex:command:review-cycle"' "$LOCK_PATH"
+grep -q '"key": "codex:skill:hermes-manager"' "$LOCK_PATH"
 grep -q '"key": "no-agent:script:fixture-notify"' "$LOCK_PATH"
 grep -q '"key": "no-agent:script:inline-notify"' "$LOCK_PATH"
 grep -q '`dotfiles` priority 10: available' "$REPORT_PATH"
