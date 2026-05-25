@@ -73,6 +73,8 @@ Run these checks:
    - Confirm missing main-board buckets can be provisioned by the Hermes
      runtime. Setup checks should report missing buckets but not require manual
      creation.
+   - Confirm `hv-hermes-dev-team-manager` is installed and executable when the
+     sidecar dispatcher is expected to run on this machine.
    - Confirm `HV_HERMES_WORKER_COMMAND` or an equivalent
      `dev_team.worker_command` is configured before worker dispatch is marked
      ready.

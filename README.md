@@ -163,6 +163,8 @@ The base manifest also installs reusable no-agent scripts when executable
 script links are managed:
 
 - `hv-hermes-vikunja-task-updates` — polls Vikunja task updates
+- `hv-hermes-dev-team-manager` — runs the Dev Team Mode sidecar for board
+  provisioning, worker dispatch, and worker process status
 - `hv-hermes-github-cricket-issues` — polls GitHub open issues labeled
   `cricket`
 
@@ -206,7 +208,9 @@ After install, restart the agent session and run `check-setup`.
 Hermes Dev Team Mode is documented in `docs/hermes-dev-team-mode.md`. It treats
 the current Hermes agent as the manager, uses main Vikunja project boards as the
 canonical user-visible issue state, and uses a per-manager internal Vikunja
-project for worker execution.
+project for worker execution. `hv-hermes-dev-team-manager` provides the
+mechanical sidecar loop for provisioning boards, dispatching workers, and
+tracking worker exits; manager review and integration remain agent work.
 
 ## Agent resolution model
 

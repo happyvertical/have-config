@@ -48,6 +48,13 @@
     },
     {
       "agent": "no-agent",
+      "name": "hv-hermes-dev-team-manager",
+      "path": "reusable-scripts/hermes/no-agent/hv-hermes-dev-team-manager",
+      "executable": true,
+      "description": "Run the Hermes Dev Team Mode sidecar for Vikunja board provisioning, worker dispatch, and worker process status."
+    },
+    {
+      "agent": "no-agent",
       "name": "hv-hermes-github-cricket-issues",
       "path": "reusable-scripts/hermes/no-agent/hv-hermes-github-cricket-issues",
       "executable": true,
