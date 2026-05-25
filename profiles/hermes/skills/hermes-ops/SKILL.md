@@ -75,8 +75,10 @@ remote state.
 ## Zulip Gateway Setup
 
 HappyVertical's primary chat is Zulip at `https://chat.happyvertical.com`.
-When a Hermes agent is expected to respond there immediately, configure a Zulip
-bot account in the local Hermes `.env` or approved secret source:
+When a Hermes agent is expected to respond there immediately, configure a
+per-agent Zulip account in the local Hermes `.env` or approved secret source.
+Do not require a Zulip bot account; cricket currently uses a normal Zulip
+account with API credentials.
 
 - `ZULIP_SITE_URL=https://chat.happyvertical.com`
 - `ZULIP_EMAIL`
