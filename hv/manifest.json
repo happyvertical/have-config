@@ -105,7 +105,7 @@
         "ZULIP_API_KEY"
       ],
       "default_enabled": false,
-      "description": "Zulip bot API access for Hermes gateway long-poll messaging."
+      "description": "Per-agent Zulip account API access for Hermes gateway long-poll messaging."
     }
   ],
   "services": [
@@ -177,7 +177,7 @@
       "purpose": "Primary team chat and agent-response channel.",
       "cli": {
         "status": "hermes-gateway-long-poll",
-        "notes": "Hermes agents should set platforms.zulip.enabled=true and use a Zulip bot account with ZULIP_SITE_URL, ZULIP_EMAIL, and ZULIP_API_KEY; the gateway adapter consumes /api/v1/register and /api/v1/events long polling. Response readiness also needs ZULIP_ALLOWED_USERS or explicit ZULIP_ALLOW_ALL_USERS=true for default-deny authorization."
+        "notes": "Hermes agents should set platforms.zulip.enabled=true and use a per-agent Zulip account with ZULIP_SITE_URL, ZULIP_EMAIL, and ZULIP_API_KEY; the gateway adapter consumes /api/v1/register and /api/v1/events long polling. Response readiness also needs ZULIP_ALLOWED_USERS or explicit ZULIP_ALLOW_ALL_USERS=true for default-deny authorization."
       }
     },
     {
