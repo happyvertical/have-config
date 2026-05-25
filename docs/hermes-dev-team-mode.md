@@ -69,6 +69,31 @@ The worker command is configured locally with `HV_HERMES_WORKER_COMMAND` or the
 equivalent Hermes config value. Workers must not edit the integration worktree
 directly.
 
+## Manager Sidecar
+
+`hv-hermes-dev-team-manager` is the first runtime sidecar for this mode. It is
+installed as a reusable no-agent script by `have-config/install.sh` and can be
+run once from a scheduler or continuously:
+
+```bash
+hv-hermes-dev-team-manager --once
+hv-hermes-dev-team-manager --loop --interval 30
+```
+
+The sidecar performs mechanical coordination only:
+
+- ensures the per-manager project and configured buckets exist
+- provisions missing buckets on watched main kanban boards
+- finds undispatched tasks in the first main bucket, usually `To-Do`
+- creates one internal worker task in the manager project
+- creates an isolated git worktree for the worker
+- launches `dev_team.worker_command` or `HV_HERMES_WORKER_COMMAND`
+- tracks worker exit status and moves worker cards to `Integrating` or
+  `Blocked`
+
+The sidecar does not review diffs or apply changes to the integration worktree.
+That remains manager-agent work before a main-board card moves to `Review`.
+
 ## Suggested Hermes Config
 
 ```yaml
@@ -91,6 +116,7 @@ dev_team:
   manager_buckets: [Queued, Working, Integrating, Blocked, Closed]
   status_updates: on_request
   integration_gate: review_only
+  poll_interval_seconds: 30
 ```
 
 ## Blocking Conditions
