@@ -85,5 +85,7 @@ Pick when the first consumer pair exists, not before.
       `check-setup`
 - [x] Hermes `hermes-ops` skill — scheduled Vikunja pickup state,
       blocked-task recovery, and watcher setup
+- [x] Hermes `hermes-manager` skill — Dev Team Mode manager behavior for
+      local worker dispatch, board state, and live integration
 - [ ] Publish an exporter from Context Forge into the manifest shape expected by
       have-config (`manifest.json` with `skills`, `commands`, and `agent_docs`).
