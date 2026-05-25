@@ -2,7 +2,7 @@
 
 Hermes Dev Team Mode turns one Hermes agent into the manager for a local
 development team. The human communicates with the manager in Zulip, watches
-canonical issues move through Vikunja project boards, and QA's a live dev
+canonical issues move through Vikunja project boards, and QA-tests a live dev
 server exposed on the local network.
 
 ## Operating Model
