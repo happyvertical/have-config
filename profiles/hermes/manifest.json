@@ -28,6 +28,12 @@
       "name": "hermes-ops",
       "path": "skills/hermes-ops",
       "description": "Operate Hermes scheduled pickup, blocked-task recovery, and no-agent watchers"
+    },
+    {
+      "agent": "codex",
+      "name": "hermes-manager",
+      "path": "skills/hermes-manager",
+      "description": "Operate Hermes Dev Team Mode as a manager for local worker agents"
     }
   ],
   "env_requirements": [
@@ -48,6 +54,14 @@
       ],
       "default_enabled": false,
       "description": "Hermes gateway Zulip bot credentials and routing for long-poll chat response."
+    },
+    {
+      "capability": "hermes-dev-team",
+      "vars": [
+        "HV_HERMES_WORKER_COMMAND"
+      ],
+      "default_enabled": false,
+      "description": "Worker command template used by Hermes Dev Team Mode."
     }
   ],
   "services": []

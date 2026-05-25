@@ -62,11 +62,15 @@ have-config/
 │       ├── commands/
 │       │   ├── claude/check-setup.md
 │       │   └── codex/check-setup.md
-│       └── skills/check-setup/
-│           └── SKILL.md
+│       └── skills/
+│           ├── check-setup/SKILL.md
+│           ├── hermes-manager/SKILL.md
+│           └── hermes-ops/SKILL.md
 ├── agent-doc-snippets/              # cumulative AGENTS / CLAUDE sections
 ├── docs/
 │   ├── agent-playbook.md            # what agents use each service for
+│   ├── hermes-dev-team-mode.md      # Hermes manager / worker operating model
+│   ├── hermes-zulip-gateway.md      # Zulip gateway setup and checks
 │   └── infrastructure.md            # HappyVertical service map
 ├── services/
 │   └── services.json                # machine-readable service registry
@@ -152,6 +156,8 @@ Hermes agents additionally get local generated commands/skills:
   services
 - `hermes-ops` — documents scheduled Vikunja pickup state, blocked-task
   recovery, and watcher setup
+- `hermes-manager` — documents Dev Team Mode manager behavior for local worker
+  dispatch, board state, and live integration
 
 The base manifest also installs reusable no-agent scripts when executable
 script links are managed:
@@ -196,6 +202,11 @@ used only when a local snapshot exists at `HV_CONTEXTFORGE_SNAPSHOT_DIR` or
 `~/.hermes/contextforge`.
 
 After install, restart the agent session and run `check-setup`.
+
+Hermes Dev Team Mode is documented in `docs/hermes-dev-team-mode.md`. It treats
+the current Hermes agent as the manager, uses main Vikunja project boards as the
+canonical user-visible issue state, and uses a per-manager internal Vikunja
+project for worker execution.
 
 ## Agent resolution model
 
