@@ -929,6 +929,28 @@ def bucket_id(buckets: dict[str, dict[str, Any]], name: str) -> int:
     return int(bucket["id"])
 
 
+def block_main_task(
+    api: VikunjaClient,
+    main_contexts: dict[str, tuple[int, int, dict[str, dict[str, Any]]]],
+    main_id: int,
+    comment: str,
+    dry_run: bool,
+) -> None:
+    main_ctx = main_contexts.get(str(main_id))
+    if not main_ctx:
+        return
+    main_project_id, main_view_id, main_buckets = main_ctx
+    move_task_to_bucket(
+        api,
+        main_project_id,
+        main_view_id,
+        bucket_id(main_buckets, "Blocked"),
+        main_id,
+        dry_run,
+    )
+    add_comment(api, main_id, comment, dry_run)
+
+
 def reconcile_runs(
     api: VikunjaClient,
     config: RuntimeConfig,
@@ -943,10 +965,25 @@ def reconcile_runs(
     for main_id, record in list(state.get("dispatches", {}).items()):
         if not isinstance(record, dict) or record.get("status") != "working":
             continue
-        exit_path = Path(str(record.get("exit_path") or ""))
-        worker_task_id = int(record.get("worker_task_id") or 0)
+        try:
+            main_task_id = int(main_id)
+            worker_task_id = int(record.get("worker_task_id") or 0)
+        except (TypeError, ValueError):
+            record["status"] = "blocked"
+            record["finished_at"] = utc_now()
+            record["blocker"] = "invalid task id in local state"
+            changed = True
+            continue
+        if worker_task_id <= 0:
+            record["status"] = "blocked"
+            record["finished_at"] = utc_now()
+            record["blocker"] = "missing worker task id in local state"
+            changed = True
+            continue
+        exit_path_raw = str(record.get("exit_path") or "").strip()
+        exit_path = Path(exit_path_raw) if exit_path_raw else None
         pid = record.get("pid")
-        if exit_path.exists():
+        if exit_path and exit_path.is_file():
             rc_text = exit_path.read_text(encoding="utf-8").strip()
             rc = int(rc_text) if rc_text.isdigit() else 1
             if rc == 0:
@@ -983,32 +1020,30 @@ def reconcile_runs(
                     worker_task_id,
                     dry_run,
                 )
-                main_ctx = main_contexts.get(str(main_id))
-                if main_ctx:
-                    main_project_id, main_view_id, main_buckets = main_ctx
-                    move_task_to_bucket(
-                        api,
-                        main_project_id,
-                        main_view_id,
-                        bucket_id(main_buckets, "Blocked"),
-                        int(main_id),
-                        dry_run,
-                    )
-                    add_comment(
-                        api,
-                        int(main_id),
-                        f"Hermes Dev Team worker task #{worker_task_id} failed with exit code {rc}. "
-                        f"Log: `{record.get('log_path')}`",
-                        dry_run,
-                    )
+                block_main_task(
+                    api,
+                    main_contexts,
+                    main_task_id,
+                    f"Hermes Dev Team worker task #{worker_task_id} failed with exit code {rc}. "
+                    f"Log: `{record.get('log_path')}`",
+                    dry_run,
+                )
                 record["status"] = "blocked"
             record["finished_at"] = utc_now()
             changed = True
-        elif isinstance(pid, int) and not pid_alive(pid):
+        elif isinstance(pid, int) and pid_alive(pid):
+            continue
+        else:
+            if exit_path and exit_path.exists() and not exit_path.is_file():
+                reason = f"exit code path is not a file: `{exit_path}`"
+            elif exit_path:
+                reason = f"worker process is no longer running and did not write exit code file `{exit_path}`"
+            else:
+                reason = "worker process is no longer running and local state has no exit code path"
             add_comment(
                 api,
                 worker_task_id,
-                "Hermes Dev Team worker process is no longer running and did not write an exit code.",
+                f"Hermes Dev Team worker blocked: {reason}.",
                 dry_run,
             )
             move_task_to_bucket(
@@ -1019,8 +1054,16 @@ def reconcile_runs(
                 worker_task_id,
                 dry_run,
             )
+            block_main_task(
+                api,
+                main_contexts,
+                main_task_id,
+                f"Hermes Dev Team worker task #{worker_task_id} is blocked: {reason}.",
+                dry_run,
+            )
             record["status"] = "blocked"
             record["finished_at"] = utc_now()
+            record["blocker"] = reason
             changed = True
     if changed:
         save_state(config, state, dry_run)
@@ -1198,14 +1241,24 @@ def dispatch_task(
     return True
 
 
-def validate_runnable(config: RuntimeConfig) -> None:
+def validate_bucket_config(name: str, buckets: list[str], required: list[str]) -> None:
+    if not buckets:
+        raise ConfigError(f"dev_team.{name} must contain at least one bucket")
+    missing = [bucket for bucket in required if bucket not in buckets]
+    if missing:
+        raise ConfigError(f"dev_team.{name} is missing required buckets: {', '.join(missing)}")
+
+
+def validate_runnable(config: RuntimeConfig, require_worker_command: bool) -> None:
     if not config.enabled:
         return
     if not config.manager_identity:
         raise ConfigError("manager identity is required; set dev_team.manager_identity, ZULIP_EMAIL, or HV_AGENT_EMAIL")
     if not config.vikunja_token:
         raise ConfigError("HV_VIKUNJA_TOKEN is required")
-    if not config.worker_command:
+    validate_bucket_config("main_buckets", config.main_buckets, DEFAULT_MAIN_BUCKETS)
+    validate_bucket_config("manager_buckets", config.manager_buckets, DEFAULT_MANAGER_BUCKETS)
+    if require_worker_command and not config.worker_command:
         raise ConfigError("dev_team.worker_command or HV_HERMES_WORKER_COMMAND is required")
 
 
@@ -1213,7 +1266,7 @@ def run_once(config: RuntimeConfig, args: argparse.Namespace) -> int:
     if not config.enabled:
         print("Dev Team Mode skipped: dev_team.enabled is not true")
         return 0
-    validate_runnable(config)
+    validate_runnable(config, require_worker_command=not args.no_dispatch)
     if not args.dry_run:
         config.worktree_root.mkdir(parents=True, exist_ok=True)
         config.integration_root.mkdir(parents=True, exist_ok=True)
@@ -1308,12 +1361,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--config", help="Hermes config YAML path. Default: $HERMES_HOME/config.yaml or ~/.hermes/config.yaml")
     parser.add_argument("--env-file", help="Hermes env file path. Default: $HERMES_HOME/.env or ~/.hermes/.env")
     parser.add_argument("--dry-run", action="store_true", help="Read state and print intended writes without mutating Vikunja, git, or local state")
-    parser.add_argument("--once", action="store_true", help="Run one reconciliation cycle. This is the default.")
-    parser.add_argument("--loop", action="store_true", help="Run continuously instead of once")
+    run_mode = parser.add_mutually_exclusive_group()
+    run_mode.add_argument("--once", dest="loop", action="store_false", help="Run one reconciliation cycle. This is the default.")
+    run_mode.add_argument("--loop", dest="loop", action="store_true", help="Run continuously instead of once")
     parser.add_argument("--interval", type=int, help="Polling interval in seconds for --loop")
     parser.add_argument("--max-dispatch", type=int, default=1, help="Maximum new worker tasks to dispatch per run")
     parser.add_argument("--no-dispatch", action="store_true", help="Only reconcile existing worker runs and ensure board structure")
     parser.add_argument("--print-state", action="store_true", help="Print local manager state and exit")
+    parser.set_defaults(loop=False)
     return parser.parse_args(argv)
 
 
