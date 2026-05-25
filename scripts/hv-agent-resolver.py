@@ -437,6 +437,9 @@ def is_managed_target(path: Path, generated_root: Path, repo_roots: list[Path]) 
         return True
     except ValueError:
         pass
+    is_local_bin_link = path.parent.name == "bin" and path.parent.parent.name == ".local"
+    if is_local_bin_link:
+        return False
     for root in repo_roots:
         try:
             target.resolve().relative_to(root.resolve())
@@ -451,8 +454,6 @@ def is_managed_target(path: Path, generated_root: Path, repo_roots: list[Path]) 
     if target.name == "CLAUDE.md" and ".claude" in parts:
         return True
     if "commands" in parts and (".claude" in parts or ".codex" in parts):
-        return True
-    if ".local" in parts and "bin" in parts:
         return True
     return False
 

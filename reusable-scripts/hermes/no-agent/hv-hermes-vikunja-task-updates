@@ -150,6 +150,7 @@ def main() -> int:
         projects = [p for p in projects if int(p.get("id", 0)) in allowed]
 
     current: dict[str, dict[str, Any]] = {}
+    failed_project_ids: set[int] = set()
     for project in projects:
         if not isinstance(project, dict):
             continue
@@ -157,7 +158,9 @@ def main() -> int:
         title = str(project.get("title") or f"Project {pid}")
         try:
             tasks = paged_list(root, token, f"/projects/{pid}/tasks")
-        except urllib.error.HTTPError:
+        except urllib.error.URLError as exc:
+            print(f"Skipping Vikunja project {pid} ({title}) after fetch failure: {exc}", file=sys.stderr)
+            failed_project_ids.add(pid)
             continue
         for task in tasks:
             if isinstance(task, dict):
@@ -168,6 +171,26 @@ def main() -> int:
     state = load_state(path)
     previous: dict[str, dict[str, Any]] = state.get("tasks", {})
     initialized = bool(state.get("initialized"))
+
+    # If a project fetch fails, keep its previous task signatures in the
+    # baseline for this run. Otherwise a transient HTTP/network error would
+    # look identical to every task in that project being removed and would also
+    # corrupt the saved state by dropping those tasks from future comparisons.
+    if failed_project_ids:
+        for tid, old in previous.items():
+            try:
+                old_project_id = int(old.get("project_id", 0))
+            except (TypeError, ValueError):
+                old_project_id = 0
+            if old_project_id in failed_project_ids and tid not in current:
+                current[tid] = old
+
+    if failed_project_ids and not initialized:
+        print(
+            "Skipping initial Vikunja watcher state seed because one or more projects failed to fetch",
+            file=sys.stderr,
+        )
+        return 0
 
     if initialized:
         for tid, sig in sorted(current.items(), key=lambda kv: int(kv[0])):

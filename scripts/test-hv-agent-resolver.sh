@@ -248,6 +248,40 @@ grep -q '`fixture-service` https://fixture.example.test CLI: test-only (source: 
 grep -q '"id": "fixture-service"' "$LOCK_PATH"
 grep -q 'skills/codex/<name>/SKILL.md' "$LOCAL_DIR/README.md"
 
+UNMANAGED_HOME="$TMP_DIR/unmanaged-home"
+UNMANAGED_TARGET_ROOT="$TMP_DIR/foreign"
+mkdir -p "$UNMANAGED_HOME/.local/bin" "$UNMANAGED_TARGET_ROOT/.local/bin"
+printf 'foreign fixture notify\n' > "$UNMANAGED_TARGET_ROOT/.local/bin/fixture-notify"
+ln -s "$UNMANAGED_TARGET_ROOT/.local/bin/fixture-notify" "$UNMANAGED_HOME/.local/bin/fixture-notify"
+HERMES_HOME="$UNMANAGED_HOME/.hermes" python3 "$ROOT_DIR/scripts/hv-agent-resolver.py" \
+    --dotfiles-dir "$DOTFILES_DIR" \
+    --have-config-dir "$HAVE_CONFIG_DIR" \
+    --contextforge-dir "$CONTEXTFORGE_DIR" \
+    --local-overrides-dir "$LOCAL_DIR" \
+    --output-dir "$TMP_DIR/generated-unmanaged" \
+    --home-dir "$UNMANAGED_HOME" \
+    --lock-path "$TMP_DIR/unmanaged-lock.json" \
+    --report-path "$TMP_DIR/unmanaged-report.md" >/dev/null
+grep -q 'blocked managed link' "$TMP_DIR/unmanaged-report.md"
+test "$(readlink "$UNMANAGED_HOME/.local/bin/fixture-notify")" = "$UNMANAGED_TARGET_ROOT/.local/bin/fixture-notify"
+
+UNMANAGED_REPO_HOME="$TMP_DIR/unmanaged-repo-home"
+UNMANAGED_REPO_TARGET="$HAVE_CONFIG_DIR/manual-bin/fixture-notify"
+mkdir -p "$UNMANAGED_REPO_HOME/.local/bin" "$(dirname "$UNMANAGED_REPO_TARGET")"
+printf 'manual repo-root fixture notify\n' > "$UNMANAGED_REPO_TARGET"
+ln -s "$UNMANAGED_REPO_TARGET" "$UNMANAGED_REPO_HOME/.local/bin/fixture-notify"
+HERMES_HOME="$UNMANAGED_REPO_HOME/.hermes" python3 "$ROOT_DIR/scripts/hv-agent-resolver.py" \
+    --dotfiles-dir "$DOTFILES_DIR" \
+    --have-config-dir "$HAVE_CONFIG_DIR" \
+    --contextforge-dir "$CONTEXTFORGE_DIR" \
+    --local-overrides-dir "$LOCAL_DIR" \
+    --output-dir "$TMP_DIR/generated-unmanaged-repo" \
+    --home-dir "$UNMANAGED_REPO_HOME" \
+    --lock-path "$TMP_DIR/unmanaged-repo-lock.json" \
+    --report-path "$TMP_DIR/unmanaged-repo-report.md" >/dev/null
+grep -q 'blocked managed link' "$TMP_DIR/unmanaged-repo-report.md"
+test "$(readlink "$UNMANAGED_REPO_HOME/.local/bin/fixture-notify")" = "$UNMANAGED_REPO_TARGET"
+
 if HV_ENABLED_CAPABILITIES=identity HERMES_HOME="$TMP_DIR/home-env-failure/.hermes" python3 "$ROOT_DIR/scripts/hv-agent-resolver.py" \
     --dotfiles-dir "$DOTFILES_DIR" \
     --have-config-dir "$HAVE_CONFIG_DIR" \
