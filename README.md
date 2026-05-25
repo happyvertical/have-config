@@ -115,6 +115,8 @@ Configs are versioned via Changesets and published on merge to `main`.
 
 ## Agent Bootstrap
 
+For a workstation or local development environment:
+
 ```bash
 git clone https://github.com/happyvertical/have-config.git ~/Work/happyvertical/repos/have-config
 cd ~/Work/happyvertical/repos/have-config
@@ -143,6 +145,43 @@ Hermes agents additionally get local generated commands/skills:
 
 - `/check-setup` / `check-setup` — verifies agent access to HappyVertical
   services
+
+### Hermes Agent Bootstrap
+
+Existing Hermes agents only need to clone or update `have-config` and run its
+installer with the Hermes profile enabled:
+
+```bash
+export HV_AGENT_PROFILE=hermes
+export HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+
+mkdir -p "$HERMES_HOME/repos"
+if [ ! -d "$HERMES_HOME/repos/have-config/.git" ]; then
+  git clone git@github.com:happyvertical/have-config.git "$HERMES_HOME/repos/have-config"
+fi
+
+cd "$HERMES_HOME/repos/have-config"
+git pull --ff-only
+./install.sh
+```
+
+Use HTTPS instead of SSH when the agent does not have GitHub SSH keys:
+
+```bash
+git clone https://github.com/happyvertical/have-config.git "$HERMES_HOME/repos/have-config"
+```
+
+The installer pulls or updates only the environment repos it owns:
+
+- dotfiles baseline under `~/.hermes/dotfiles` by default
+- `happyvertical/pr-review` under the configured `PR_REVIEW_DIR`
+
+It does not clone every HappyVertical project repository. Project repos should
+come from the Hermes workspace or task provisioning. Context Forge content is
+used only when a local snapshot exists at `HV_CONTEXTFORGE_SNAPSHOT_DIR` or
+`~/.hermes/contextforge`.
+
+After install, restart the agent session and run `check-setup`.
 
 ## Agent resolution model
 
