@@ -78,6 +78,8 @@ Run these checks:
      creation.
    - Confirm `hv-hermes-dev-team-manager` is installed and executable when the
      sidecar dispatcher is expected to run on this machine.
+   - Confirm `~/.hermes/.env` or the configured sidecar env file can supply
+     local-only values that should not be committed.
    - Confirm `HV_HERMES_WORKER_COMMAND` or an equivalent
      `dev_team.worker_command` is configured before worker dispatch is marked
      ready.

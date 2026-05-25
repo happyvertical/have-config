@@ -80,6 +80,11 @@ hv-hermes-dev-team-manager --once
 hv-hermes-dev-team-manager --loop --interval 30
 ```
 
+The sidecar reads `~/.hermes/config.yaml` by default and loads
+`~/.hermes/.env` for local environment values such as
+`HV_HERMES_WORKER_COMMAND`, `HV_VIKUNJA_TOKEN`, and Zulip identity variables.
+Use `--config` or `--env-file` to point it at non-default files.
+
 The sidecar performs mechanical coordination only:
 
 - ensures the per-manager project and configured buckets exist

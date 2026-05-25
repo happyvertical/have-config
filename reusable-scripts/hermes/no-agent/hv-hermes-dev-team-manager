@@ -207,6 +207,29 @@ def load_config_file(path: Path) -> dict[str, Any]:
         return load_simple_yaml(path)
 
 
+def load_env_file(path: Path) -> None:
+    if not path.exists():
+        return
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].strip()
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
+            continue
+        if key in os.environ:
+            continue
+        value = strip_inline_comment(value).strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        os.environ[key] = os.path.expanduser(os.path.expandvars(value))
+
+
 def expand_value(value: Any) -> Any:
     if isinstance(value, str):
         return os.path.expanduser(os.path.expandvars(value))
@@ -250,6 +273,12 @@ def as_list(value: Any, default: list[str]) -> list[str]:
 
 def resolve_config(args: argparse.Namespace) -> RuntimeConfig:
     hermes_home = Path(os.environ.get("HERMES_HOME", "~/.hermes")).expanduser()
+    env_path = Path(
+        args.env_file
+        or os.environ.get("HV_HERMES_ENV_FILE")
+        or hermes_home / ".env"
+    ).expanduser()
+    load_env_file(env_path)
     config_path = Path(
         args.config
         or os.environ.get("HV_HERMES_CONFIG")
@@ -832,7 +861,10 @@ def launch_worker(
         }
     )
     command = os.path.expanduser(os.path.expandvars(config.worker_command)).format_map(command_vars)
-    argv = shlex.split(command)
+    try:
+        argv = shlex.split(command)
+    except ValueError as exc:
+        raise ConfigError(f"invalid worker command: {exc}") from exc
     if not argv:
         raise ConfigError("worker command expanded to an empty command")
     if dry_run:
@@ -1028,7 +1060,25 @@ def dispatch_task(
         )
         return False
 
-    worktree, branch = ensure_worktree(repo, config.worktree_root, main_task_id, task_title(main_task), dry_run)
+    try:
+        worktree, branch = ensure_worktree(repo, config.worktree_root, main_task_id, task_title(main_task), dry_run)
+    except (OSError, subprocess.SubprocessError) as exc:
+        move_task_to_bucket(
+            api,
+            int(main_project["id"]),
+            main_view_id,
+            bucket_id(main_buckets, "Blocked"),
+            main_task_id,
+            dry_run,
+        )
+        add_comment(
+            api,
+            main_task_id,
+            f"Hermes Dev Team blocked: could not create the worker worktree for `{repo}`.\n\n{exc}",
+            dry_run,
+        )
+        return False
+
     worker_task = create_worker_task(
         api,
         config,
@@ -1053,7 +1103,50 @@ def dispatch_task(
         worker_task_id,
         dry_run,
     )
-    launch = launch_worker(config, main_task, worker_task, repo, worktree, branch, dry_run)
+    try:
+        launch = launch_worker(config, main_task, worker_task, repo, worktree, branch, dry_run)
+    except (ConfigError, OSError, subprocess.SubprocessError) as exc:
+        move_task_to_bucket(
+            api,
+            manager_project_id,
+            manager_view_id,
+            bucket_id(manager_buckets, "Blocked"),
+            worker_task_id,
+            dry_run,
+        )
+        move_task_to_bucket(
+            api,
+            int(main_project["id"]),
+            main_view_id,
+            bucket_id(main_buckets, "Blocked"),
+            main_task_id,
+            dry_run,
+        )
+        add_comment(
+            api,
+            worker_task_id,
+            f"Hermes Dev Team blocked: worker command failed to start.\n\n{exc}",
+            dry_run,
+        )
+        add_comment(
+            api,
+            main_task_id,
+            f"Hermes Dev Team blocked: worker task #{worker_task_id} failed to start.\n\n{exc}",
+            dry_run,
+        )
+        state.setdefault("dispatches", {})[str(main_task_id)] = {
+            "status": "blocked",
+            "main_task_id": main_task_id,
+            "worker_task_id": worker_task_id,
+            "repo_path": str(repo),
+            "worktree_path": str(worktree),
+            "branch": branch,
+            "blocked_at": utc_now(),
+            "blocker": "worker command failed to start",
+        }
+        save_state(config, state, dry_run)
+        return False
+
     move_task_to_bucket(
         api,
         manager_project_id,
@@ -1213,6 +1306,7 @@ def run_once(config: RuntimeConfig, args: argparse.Namespace) -> int:
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", help="Hermes config YAML path. Default: $HERMES_HOME/config.yaml or ~/.hermes/config.yaml")
+    parser.add_argument("--env-file", help="Hermes env file path. Default: $HERMES_HOME/.env or ~/.hermes/.env")
     parser.add_argument("--dry-run", action="store_true", help="Read state and print intended writes without mutating Vikunja, git, or local state")
     parser.add_argument("--once", action="store_true", help="Run one reconciliation cycle. This is the default.")
     parser.add_argument("--loop", action="store_true", help="Run continuously instead of once")
