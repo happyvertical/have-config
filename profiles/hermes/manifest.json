@@ -47,7 +47,7 @@
         "ZULIP_API_KEY"
       ],
       "default_enabled": false,
-      "description": "Hermes gateway Zulip bot credentials and routing for long-poll chat response."
+      "description": "Hermes gateway Zulip account API credentials and routing for long-poll chat response."
     }
   ],
   "services": []

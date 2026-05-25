@@ -58,9 +58,9 @@ Run these checks:
      explicit `ZULIP_ALLOW_ALL_USERS=true`; otherwise mark response readiness as
      `Blocked` even if authentication succeeds.
    - If a Hermes Zulip gateway adapter is configured, verify `GET /api/v1/users/me`
-     succeeds for the bot and that the `/api/v1/register` + `/api/v1/events`
-     long-poll listener can start without auth errors.
-   - Report missing bot credentials as `Blocked` with the variable names.
+     succeeds for the configured account and that the `/api/v1/register` + `/api/v1/events`
+     long-poll path starts without auth errors.
+   - Report missing Zulip account API credentials as `Blocked` with the variable names.
 
 If a check cannot be performed noninteractively, mark it `Blocked` and state
 the missing credential, connector, environment variable, CLI, or local config.
