@@ -1,0 +1,1398 @@
+#!/usr/bin/env python3
+"""Run the Hermes Dev Team Mode manager sidecar.
+
+The sidecar owns mechanical coordination only: Vikunja project/bucket
+provisioning, task dispatch, worker process launch, and worker process status.
+Manager review and integration remain agent work.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shlex
+import signal
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+DEFAULT_BASE_URL = "https://todo.happyvertical.com"
+DISPATCH_MARKER = "Hermes Dev Team dispatch"
+DEFAULT_MAIN_BUCKETS = ["To-Do", "Blocked", "Doing", "Review", "Done"]
+DEFAULT_MANAGER_BUCKETS = ["Queued", "Working", "Integrating", "Blocked", "Closed"]
+
+
+class ConfigError(RuntimeError):
+    """Raised when local Dev Team Mode configuration is not runnable."""
+
+
+class ApiError(RuntimeError):
+    """Raised when Vikunja returns an unexpected API response."""
+
+
+@dataclass
+class RuntimeConfig:
+    enabled: bool
+    config_path: Path
+    vikunja_url: str
+    vikunja_token: str
+    manager_identity: str
+    manager_project_name: str
+    watch_projects: list[str] | str
+    repo_search_roots: list[Path]
+    worktree_root: Path
+    integration_root: Path
+    state_dir: Path
+    worker_command: str
+    main_buckets: list[str]
+    manager_buckets: list[str]
+    dev_server_url: str
+    poll_interval_seconds: int
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def strip_inline_comment(line: str) -> str:
+    in_quote: str | None = None
+    escaped = False
+    for idx, char in enumerate(line):
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = True
+            continue
+        if char in {"'", '"'}:
+            if in_quote == char:
+                in_quote = None
+            elif in_quote is None:
+                in_quote = char
+            continue
+        if char == "#" and in_quote is None:
+            return line[:idx]
+    return line
+
+
+def parse_scalar(value: str) -> Any:
+    value = value.strip()
+    if value == "":
+        return ""
+    if value[0:1] == value[-1:] and value[0:1] in {"'", '"'}:
+        return value[1:-1]
+    lowered = value.lower()
+    if lowered in {"true", "yes", "on"}:
+        return True
+    if lowered in {"false", "no", "off"}:
+        return False
+    if lowered in {"null", "none", "~"}:
+        return None
+    if value.startswith("[") and value.endswith("]"):
+        return [parse_scalar(part) for part in split_inline_list(value[1:-1])]
+    if re.fullmatch(r"-?\d+", value):
+        try:
+            return int(value)
+        except ValueError:
+            pass
+    return value
+
+
+def split_inline_list(value: str) -> list[str]:
+    parts: list[str] = []
+    current: list[str] = []
+    in_quote: str | None = None
+    escaped = False
+    for char in value:
+        if escaped:
+            current.append(char)
+            escaped = False
+            continue
+        if char == "\\":
+            current.append(char)
+            escaped = True
+            continue
+        if char in {"'", '"'}:
+            current.append(char)
+            if in_quote == char:
+                in_quote = None
+            elif in_quote is None:
+                in_quote = char
+            continue
+        if char == "," and in_quote is None:
+            part = "".join(current).strip()
+            if part:
+                parts.append(part)
+            current = []
+            continue
+        current.append(char)
+    part = "".join(current).strip()
+    if part:
+        parts.append(part)
+    return parts
+
+
+def load_simple_yaml(path: Path) -> dict[str, Any]:
+    lines: list[tuple[int, str]] = []
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        without_comment = strip_inline_comment(raw).rstrip()
+        if not without_comment.strip():
+            continue
+        indent = len(without_comment) - len(without_comment.lstrip(" "))
+        lines.append((indent, without_comment.strip()))
+
+    def parse_block(index: int, indent: int) -> tuple[Any, int]:
+        dict_result: dict[str, Any] = {}
+        list_result: list[Any] = []
+        mode: str | None = None
+        while index < len(lines):
+            current_indent, text = lines[index]
+            if current_indent < indent:
+                break
+            if current_indent > indent:
+                raise ConfigError(f"Unexpected indentation in {path}: {text}")
+            if text.startswith("- "):
+                mode = "list"
+                item = text[2:].strip()
+                if item == "":
+                    child, index = parse_block(index + 1, indent + 2)
+                    list_result.append(child)
+                else:
+                    list_result.append(parse_scalar(item))
+                    index += 1
+                continue
+            mode = "dict"
+            if ":" not in text:
+                raise ConfigError(f"Expected key/value in {path}: {text}")
+            key, raw_value = text.split(":", 1)
+            key = key.strip()
+            raw_value = raw_value.strip()
+            if raw_value == "":
+                if index + 1 < len(lines) and lines[index + 1][0] > current_indent:
+                    child, index = parse_block(index + 1, lines[index + 1][0])
+                    dict_result[key] = child
+                else:
+                    dict_result[key] = {}
+                    index += 1
+            else:
+                dict_result[key] = parse_scalar(raw_value)
+                index += 1
+        return (list_result if mode == "list" else dict_result), index
+
+    parsed, next_index = parse_block(0, lines[0][0] if lines else 0)
+    if next_index != len(lines) or not isinstance(parsed, dict):
+        raise ConfigError(f"Could not parse {path}")
+    return parsed
+
+
+def load_config_file(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        import yaml  # type: ignore
+
+        loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        if not isinstance(loaded, dict):
+            raise ConfigError(f"{path} must contain a YAML mapping")
+        return loaded
+    except ModuleNotFoundError:
+        return load_simple_yaml(path)
+
+
+def load_env_file(path: Path) -> None:
+    if not path.exists():
+        return
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].strip()
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
+            continue
+        if key in os.environ:
+            continue
+        value = strip_inline_comment(value).strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        os.environ[key] = os.path.expanduser(os.path.expandvars(value))
+
+
+def expand_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return os.path.expanduser(os.path.expandvars(value))
+    if isinstance(value, list):
+        return [expand_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: expand_value(item) for key, item in value.items()}
+    return value
+
+
+def as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def clean_env_string(value: Any) -> str:
+    text = str(value or "").strip()
+    if re.fullmatch(r"\$\{?[A-Za-z_][A-Za-z0-9_]*\}?", text):
+        return ""
+    return text
+
+
+def as_list(value: Any, default: list[str]) -> list[str]:
+    if value is None or value == "":
+        return list(default)
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).strip()]
+    if isinstance(value, str):
+        if value.strip().startswith("[") and value.strip().endswith("]"):
+            return [str(parse_scalar(part)) for part in split_inline_list(value.strip()[1:-1])]
+        if "," in value:
+            return [item.strip() for item in value.split(",") if item.strip()]
+        if re.fullmatch(r"[\d\s]+", value.strip()):
+            return [item for item in value.split() if item]
+        return [value.strip()]
+    return [str(value)]
+
+
+def resolve_config(args: argparse.Namespace) -> RuntimeConfig:
+    hermes_home = Path(os.environ.get("HERMES_HOME", "~/.hermes")).expanduser()
+    env_path = Path(
+        args.env_file
+        or os.environ.get("HV_HERMES_ENV_FILE")
+        or hermes_home / ".env"
+    ).expanduser()
+    load_env_file(env_path)
+    config_path = Path(
+        args.config
+        or os.environ.get("HV_HERMES_CONFIG")
+        or hermes_home / "config.yaml"
+    ).expanduser()
+    raw_config = expand_value(load_config_file(config_path))
+    dev_team = raw_config.get("dev_team") if isinstance(raw_config.get("dev_team"), dict) else {}
+
+    enabled = as_bool(os.environ.get("HV_HERMES_DEV_TEAM_ENABLED", dev_team.get("enabled")))
+    manager_identity = clean_env_string(
+        dev_team.get("manager_identity")
+        or os.environ.get("ZULIP_EMAIL")
+        or os.environ.get("HV_AGENT_EMAIL")
+        or ""
+    )
+    manager_template = str(
+        dev_team.get("manager_project_name_template") or "Hermes Manager - {email}"
+    )
+    manager_project_name = manager_template.replace("{email}", manager_identity).replace("{identity}", manager_identity)
+
+    state_root = os.environ.get("HV_HERMES_STATE_DIR")
+    if not state_root:
+        state_root = os.path.join(
+            os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state")),
+            "hv",
+        )
+
+    repo_roots = as_list(
+        dev_team.get("repo_search_roots"),
+        ["~/Work/happyvertical/repos", "~/Work/anytown/repos"],
+    )
+    watch_projects = dev_team.get("watch_projects", "all")
+    if isinstance(watch_projects, list):
+        watch_projects_value: list[str] | str = [str(item) for item in watch_projects]
+    else:
+        watch_projects_value = str(watch_projects or "all")
+
+    return RuntimeConfig(
+        enabled=enabled,
+        config_path=config_path,
+        vikunja_url=str(os.environ.get("HV_VIKUNJA_URL") or DEFAULT_BASE_URL).rstrip("/"),
+        vikunja_token=str(os.environ.get("HV_VIKUNJA_TOKEN") or "").strip(),
+        manager_identity=manager_identity,
+        manager_project_name=manager_project_name,
+        watch_projects=watch_projects_value,
+        repo_search_roots=[Path(root).expanduser() for root in repo_roots],
+        worktree_root=Path(str(dev_team.get("worktree_root") or "~/.hermes/dev-team/worktrees")).expanduser(),
+        integration_root=Path(str(dev_team.get("integration_root") or "~/.hermes/dev-team/integration")).expanduser(),
+        state_dir=Path(state_root).expanduser(),
+        worker_command=clean_env_string(
+            dev_team.get("worker_command")
+            or os.environ.get("HV_HERMES_WORKER_COMMAND")
+            or ""
+        ),
+        main_buckets=as_list(dev_team.get("main_buckets"), DEFAULT_MAIN_BUCKETS),
+        manager_buckets=as_list(dev_team.get("manager_buckets"), DEFAULT_MANAGER_BUCKETS),
+        dev_server_url=clean_env_string(dev_team.get("dev_server_url") or os.environ.get("HV_HERMES_DEV_SERVER_URL") or ""),
+        poll_interval_seconds=int(dev_team.get("poll_interval_seconds") or 30),
+    )
+
+
+class VikunjaClient:
+    def __init__(self, base_url: str, token: str) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.root = self.base_url if self.base_url.endswith("/api/v1") else f"{self.base_url}/api/v1"
+        self.token = token
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> Any:
+        url = self.root + path
+        if params:
+            url += "?" + urllib.parse.urlencode(params, doseq=True)
+        data = None
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Accept": "application/json",
+        }
+        if payload is not None:
+            data = json.dumps(payload).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        req = urllib.request.Request(url, data=data, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                body = resp.read().decode("utf-8")
+                return json.loads(body) if body else None
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            raise ApiError(f"{method} {url} failed with HTTP {exc.code}: {body[:500]}") from exc
+        except urllib.error.URLError as exc:
+            raise ApiError(f"{method} {url} failed: {exc}") from exc
+
+    def paged_list(self, path: str, params: dict[str, Any] | None = None, per_page: int = 50) -> list[Any]:
+        results: list[Any] = []
+        base_params = dict(params or {})
+        for page in range(1, 101):
+            payload = self.request(
+                "GET",
+                path,
+                params={**base_params, "page": page, "per_page": per_page},
+            )
+            items = payload.get("tasks") if isinstance(payload, dict) else payload
+            if not isinstance(items, list):
+                break
+            results.extend(items)
+            if len(items) < per_page:
+                break
+        return results
+
+
+def state_path(config: RuntimeConfig) -> Path:
+    return config.state_dir / "hermes-dev-team-manager.json"
+
+
+def load_state(config: RuntimeConfig) -> dict[str, Any]:
+    path = state_path(config)
+    if not path.exists():
+        return {"version": 1, "dispatches": {}}
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {"version": 1, "dispatches": {}}
+    if not isinstance(state.get("dispatches"), dict):
+        state["dispatches"] = {}
+    return state
+
+
+def save_state(config: RuntimeConfig, state: dict[str, Any], dry_run: bool) -> None:
+    if dry_run:
+        return
+    path = state_path(config)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
+def task_title(task: dict[str, Any]) -> str:
+    return str(task.get("title") or task.get("text") or f"Task {task.get('id')}")
+
+
+def task_url(config: RuntimeConfig, task_id: int) -> str:
+    return f"{config.vikunja_url}/tasks/{task_id}"
+
+
+def project_views(api: VikunjaClient, project: dict[str, Any]) -> list[dict[str, Any]]:
+    views = project.get("views")
+    if isinstance(views, list) and views:
+        return [view for view in views if isinstance(view, dict)]
+    project_id = int(project["id"])
+    payload = api.request("GET", f"/projects/{project_id}/views")
+    return [view for view in payload if isinstance(view, dict)] if isinstance(payload, list) else []
+
+
+def first_kanban_view(api: VikunjaClient, project: dict[str, Any]) -> dict[str, Any] | None:
+    for view in project_views(api, project):
+        if view.get("view_kind") == "kanban":
+            return view
+    return None
+
+
+def ensure_project(
+    api: VikunjaClient,
+    projects: list[dict[str, Any]],
+    title: str,
+    dry_run: bool,
+) -> dict[str, Any] | None:
+    for project in projects:
+        if str(project.get("title") or "") == title:
+            return project
+    if dry_run:
+        print(f"would create manager project: {title}")
+        return None
+    print(f"creating manager project: {title}")
+    project = api.request(
+        "PUT",
+        "/projects",
+        {
+            "title": title,
+            "description": "Internal Hermes Dev Team Mode worker coordination project.",
+        },
+    )
+    if not isinstance(project, dict):
+        raise ApiError("Vikunja did not return the created manager project")
+    return project
+
+
+def ensure_kanban_view(
+    api: VikunjaClient,
+    project: dict[str, Any],
+    dry_run: bool,
+    title: str = "Dev Team",
+) -> dict[str, Any] | None:
+    view = first_kanban_view(api, project)
+    if view:
+        return view
+    project_id = int(project["id"])
+    if dry_run:
+        print(f"would create kanban view '{title}' on project {project_id}")
+        return None
+    print(f"creating kanban view '{title}' on project {project_id}")
+    view = api.request(
+        "PUT",
+        f"/projects/{project_id}/views",
+        {
+            "title": title,
+            "view_kind": "kanban",
+            "bucket_configuration_mode": "manual",
+        },
+    )
+    if not isinstance(view, dict):
+        raise ApiError("Vikunja did not return the created kanban view")
+    return view
+
+
+def ensure_buckets(
+    api: VikunjaClient,
+    project_id: int,
+    view_id: int,
+    desired_titles: list[str],
+    dry_run: bool,
+) -> dict[str, dict[str, Any]]:
+    payload = api.request("GET", f"/projects/{project_id}/views/{view_id}/buckets")
+    buckets = [bucket for bucket in payload if isinstance(bucket, dict)] if isinstance(payload, list) else []
+    by_title = {str(bucket.get("title")): bucket for bucket in buckets}
+    for index, title in enumerate(desired_titles):
+        if title in by_title:
+            continue
+        if dry_run:
+            print(f"would create bucket '{title}' on project {project_id} view {view_id}")
+            by_title[title] = {"id": -(index + 1), "title": title}
+            continue
+        print(f"creating bucket '{title}' on project {project_id} view {view_id}")
+        bucket = api.request(
+            "PUT",
+            f"/projects/{project_id}/views/{view_id}/buckets",
+            {"title": title, "position": index + 1},
+        )
+        if isinstance(bucket, dict):
+            by_title[title] = bucket
+    return by_title
+
+
+def move_task_to_bucket(
+    api: VikunjaClient,
+    project_id: int,
+    view_id: int,
+    bucket_id: int,
+    task_id: int,
+    dry_run: bool,
+) -> None:
+    if dry_run:
+        print(f"would move task #{task_id} to bucket {bucket_id}")
+        return
+    api.request(
+        "POST",
+        f"/projects/{project_id}/views/{view_id}/buckets/{bucket_id}/tasks",
+        {
+            "task_id": task_id,
+            "bucket_id": bucket_id,
+            "project_view_id": view_id,
+        },
+    )
+
+
+def add_comment(api: VikunjaClient, task_id: int, comment: str, dry_run: bool) -> None:
+    if dry_run:
+        print(f"would comment on task #{task_id}: {comment.splitlines()[0]}")
+        return
+    api.request("PUT", f"/tasks/{task_id}/comments", {"comment": comment})
+
+
+def task_comments(api: VikunjaClient, task_id: int) -> list[dict[str, Any]]:
+    payload = api.request("GET", f"/tasks/{task_id}/comments", params={"order_by": "desc"})
+    return [comment for comment in payload if isinstance(comment, dict)] if isinstance(payload, list) else []
+
+
+def already_dispatched(api: VikunjaClient, state: dict[str, Any], task_id: int) -> bool:
+    record = state.get("dispatches", {}).get(str(task_id))
+    if isinstance(record, dict) and record.get("status") not in {"blocked", "closed"}:
+        return True
+    try:
+        return any(DISPATCH_MARKER in str(comment.get("comment") or "") for comment in task_comments(api, task_id))
+    except ApiError as exc:
+        print(f"warning: could not read comments for task #{task_id}: {exc}", file=sys.stderr)
+        return True
+
+
+def kanban_tasks(api: VikunjaClient, project_id: int, view_id: int) -> list[dict[str, Any]]:
+    payload = api.request(
+        "GET",
+        f"/projects/{project_id}/views/{view_id}/tasks",
+        params={"expand": "comments"},
+    )
+    if not isinstance(payload, list):
+        return []
+    tasks: list[dict[str, Any]] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        if isinstance(item.get("tasks"), list):
+            for task in item["tasks"]:
+                if isinstance(task, dict):
+                    task["_bucket_id"] = item.get("id")
+                    task["_bucket_title"] = item.get("title")
+                    tasks.append(task)
+        else:
+            tasks.append(item)
+    return tasks
+
+
+def select_watch_projects(
+    projects: list[dict[str, Any]],
+    config: RuntimeConfig,
+    manager_project_id: int,
+) -> list[dict[str, Any]]:
+    watch = config.watch_projects
+    if isinstance(watch, str) and watch.strip().lower() == "all":
+        return [
+            project
+            for project in projects
+            if int(project.get("id", 0)) != manager_project_id
+            and not bool(project.get("is_archived"))
+        ]
+
+    wanted = set(as_list(watch, []))
+    wanted_lower = {item.lower() for item in wanted}
+    selected: list[dict[str, Any]] = []
+    for project in projects:
+        if int(project.get("id", 0)) == manager_project_id or bool(project.get("is_archived")):
+            continue
+        project_id = str(project.get("id"))
+        title = str(project.get("title") or "")
+        if project_id in wanted or title in wanted or title.lower() in wanted_lower:
+            selected.append(project)
+    return selected
+
+
+def discover_repos(roots: list[Path]) -> list[Path]:
+    repos: list[Path] = []
+    seen: set[Path] = set()
+    for root in roots:
+        if not root.exists():
+            continue
+        for current, dirs, files in os.walk(root):
+            path = Path(current)
+            try:
+                resolved = path.resolve()
+            except OSError:
+                continue
+            depth = len(path.relative_to(root).parts)
+            if ".git" in dirs or ".git" in files:
+                if resolved not in seen:
+                    repos.append(path)
+                    seen.add(resolved)
+                dirs[:] = []
+                continue
+            if depth >= 2:
+                dirs[:] = []
+            else:
+                dirs[:] = [d for d in dirs if not d.startswith(".")]
+    return repos
+
+
+GITHUB_RE = re.compile(r"github\.com[:/](?P<owner>[A-Za-z0-9_.-]+)/(?P<repo>[A-Za-z0-9_.-]+)")
+
+
+def github_slugs(text: str) -> set[str]:
+    slugs: set[str] = set()
+    for match in GITHUB_RE.finditer(text):
+        repo = match.group("repo")
+        if repo.endswith(".git"):
+            repo = repo[:-4]
+        slugs.add(f"{match.group('owner').lower()}/{repo.lower()}")
+    return slugs
+
+
+def repo_remote_text(repo: Path) -> str:
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(repo), "remote", "-v"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except Exception:
+        return ""
+    return proc.stdout
+
+
+def infer_repo(task: dict[str, Any], project: dict[str, Any], repos: list[Path]) -> Path | None:
+    text = "\n".join(
+        [
+            task_title(task),
+            str(task.get("description") or ""),
+            str(project.get("title") or ""),
+            str(task.get("identifier") or ""),
+        ]
+    )
+    text_lower = text.lower()
+    target_slugs = github_slugs(text)
+    scored: list[tuple[int, Path]] = []
+    for repo in repos:
+        score = 0
+        name = repo.name.lower()
+        remote_text = repo_remote_text(repo)
+        remote_slugs = github_slugs(remote_text)
+        if target_slugs and target_slugs.intersection(remote_slugs):
+            score += 100
+        if re.search(rf"(^|[^a-z0-9_.-]){re.escape(name)}($|[^a-z0-9_.-])", text_lower):
+            score += 25
+        if str(project.get("title") or "").lower().replace(" ", "") == name.replace(".", ""):
+            score += 10
+        if score:
+            scored.append((score, repo))
+    if not scored:
+        return None
+    scored.sort(key=lambda item: (-item[0], str(item[1])))
+    if len(scored) > 1 and scored[0][0] == scored[1][0]:
+        return None
+    return scored[0][1]
+
+
+def slugify(value: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", value.lower()).strip("-")
+    return slug[:48] or "task"
+
+
+def git_branch_exists(repo: Path, branch: str) -> bool:
+    return subprocess.run(
+        ["git", "-C", str(repo), "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],
+        check=False,
+    ).returncode == 0
+
+
+def ensure_worktree(repo: Path, worktree_root: Path, task_id: int, title: str, dry_run: bool) -> tuple[Path, str]:
+    branch = f"hermes/task-{task_id}-{slugify(title)}"
+    worktree = worktree_root / f"task-{task_id}-{slugify(title)}"
+    if worktree.exists():
+        return worktree, branch
+    if dry_run:
+        print(f"would create git worktree {worktree} from {repo} on {branch}")
+        return worktree, branch
+    worktree.parent.mkdir(parents=True, exist_ok=True)
+    if git_branch_exists(repo, branch):
+        cmd = ["git", "-C", str(repo), "worktree", "add", str(worktree), branch]
+    else:
+        cmd = ["git", "-C", str(repo), "worktree", "add", "-b", branch, str(worktree)]
+    subprocess.run(cmd, check=True)
+    return worktree, branch
+
+
+def create_worker_task(
+    api: VikunjaClient,
+    config: RuntimeConfig,
+    manager_project_id: int,
+    main_task: dict[str, Any],
+    main_project: dict[str, Any],
+    repo: Path,
+    worktree: Path,
+    branch: str,
+    dry_run: bool,
+) -> dict[str, Any] | None:
+    main_id = int(main_task["id"])
+    title = f"Worker for #{main_id}: {task_title(main_task)}"
+    description_lines = [
+        "Hermes Dev Team worker task.",
+        "",
+        f"Main task: {task_url(config, main_id)}",
+        f"Main project: {main_project.get('title')} ({main_project.get('id')})",
+        f"Repository: {repo}",
+        f"Worker worktree: {worktree}",
+        f"Branch: {branch}",
+        f"Integration root: {config.integration_root}",
+        f"Manager: {config.manager_identity}",
+    ]
+    if config.dev_server_url:
+        description_lines.append(f"Dev server: {config.dev_server_url}")
+    description_lines.extend(
+        [
+            "",
+            "Worker contract:",
+            "- Make scoped changes for the linked main task.",
+            "- Leave reviewable output in the worker worktree.",
+            "- Exit 0 only when ready for manager review.",
+        ]
+    )
+    if dry_run:
+        print(f"would create worker task in manager project: {title}")
+        return None
+    worker = api.request(
+        "PUT",
+        f"/projects/{manager_project_id}/tasks",
+        {"title": title, "description": "\n".join(description_lines)},
+    )
+    if not isinstance(worker, dict):
+        raise ApiError("Vikunja did not return the created worker task")
+    return worker
+
+
+def create_relation(api: VikunjaClient, main_task_id: int, worker_task_id: int, dry_run: bool) -> None:
+    if dry_run:
+        print(f"would relate main task #{main_task_id} to worker task #{worker_task_id}")
+        return
+    try:
+        api.request(
+            "PUT",
+            f"/tasks/{main_task_id}/relations",
+            {"other_task_id": worker_task_id, "relation_kind": "related"},
+        )
+    except ApiError as exc:
+        print(f"warning: could not create task relation: {exc}", file=sys.stderr)
+
+
+def worker_env(
+    config: RuntimeConfig,
+    main_task: dict[str, Any],
+    worker_task: dict[str, Any],
+    repo: Path,
+    worktree: Path,
+    branch: str,
+) -> dict[str, str]:
+    main_id = str(main_task["id"])
+    worker_id = str(worker_task["id"])
+    env = os.environ.copy()
+    env.update(
+        {
+            "HERMES_DEV_TEAM_MAIN_TASK_ID": main_id,
+            "HERMES_DEV_TEAM_MAIN_TASK_URL": task_url(config, int(main_id)),
+            "HERMES_DEV_TEAM_WORKER_TASK_ID": worker_id,
+            "HERMES_DEV_TEAM_WORKER_TASK_URL": task_url(config, int(worker_id)),
+            "HERMES_DEV_TEAM_REPO_PATH": str(repo),
+            "HERMES_DEV_TEAM_WORKTREE_PATH": str(worktree),
+            "HERMES_DEV_TEAM_BRANCH": branch,
+            "HERMES_DEV_TEAM_INTEGRATION_ROOT": str(config.integration_root),
+            "HERMES_DEV_TEAM_MANAGER_IDENTITY": config.manager_identity,
+            "HERMES_DEV_TEAM_DEV_SERVER_URL": config.dev_server_url,
+        }
+    )
+    return env
+
+
+class FormatDict(dict[str, str]):
+    def __missing__(self, key: str) -> str:
+        return "{" + key + "}"
+
+
+def launch_worker(
+    config: RuntimeConfig,
+    main_task: dict[str, Any],
+    worker_task: dict[str, Any],
+    repo: Path,
+    worktree: Path,
+    branch: str,
+    dry_run: bool,
+) -> dict[str, Any]:
+    if not config.worker_command:
+        raise ConfigError("dev_team.worker_command or HV_HERMES_WORKER_COMMAND is required")
+    worker_id = int(worker_task["id"])
+    main_id = int(main_task["id"])
+    run_dir = config.state_dir / "hermes-dev-team-runs" / f"main-{main_id}-worker-{worker_id}"
+    log_path = run_dir / "worker.log"
+    exit_path = run_dir / "exit_code"
+    finished_path = run_dir / "finished_at"
+    command_vars = FormatDict(
+        {
+            "main_task_id": str(main_id),
+            "worker_task_id": str(worker_id),
+            "repo_path": str(repo),
+            "worktree_path": str(worktree),
+            "branch": branch,
+            "integration_root": str(config.integration_root),
+            "manager_identity": config.manager_identity,
+            "dev_server_url": config.dev_server_url,
+        }
+    )
+    command = os.path.expanduser(os.path.expandvars(config.worker_command)).format_map(command_vars)
+    try:
+        argv = shlex.split(command)
+    except ValueError as exc:
+        raise ConfigError(f"invalid worker command: {exc}") from exc
+    if not argv:
+        raise ConfigError("worker command expanded to an empty command")
+    if dry_run:
+        print(f"would launch worker command for task #{main_id}: {command}")
+        return {
+            "pid": None,
+            "run_dir": str(run_dir),
+            "log_path": str(log_path),
+            "exit_path": str(exit_path),
+        }
+
+    run_dir.mkdir(parents=True, exist_ok=True)
+    run_script = run_dir / "run-worker.sh"
+    run_script.write_text(
+        "\n".join(
+            [
+                "#!/usr/bin/env bash",
+                "set +e",
+                f"cd {shlex.quote(str(worktree))}",
+                f'"$@" > {shlex.quote(str(log_path))} 2>&1',
+                "rc=$?",
+                f'printf "%s\\n" "$rc" > {shlex.quote(str(exit_path))}',
+                f'date -u +"%Y-%m-%dT%H:%M:%SZ" > {shlex.quote(str(finished_path))}',
+                "exit \"$rc\"",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    run_script.chmod(0o700)
+    proc = subprocess.Popen(
+        [str(run_script), *argv],
+        cwd=str(worktree),
+        env=worker_env(config, main_task, worker_task, repo, worktree, branch),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    return {
+        "pid": proc.pid,
+        "run_dir": str(run_dir),
+        "log_path": str(log_path),
+        "exit_path": str(exit_path),
+    }
+
+
+def pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def bucket_id(buckets: dict[str, dict[str, Any]], name: str) -> int:
+    bucket = buckets.get(name)
+    if not bucket:
+        raise ConfigError(f"Expected bucket '{name}' is missing")
+    return int(bucket["id"])
+
+
+def block_main_task(
+    api: VikunjaClient,
+    main_contexts: dict[str, tuple[int, int, dict[str, dict[str, Any]]]],
+    main_id: int,
+    comment: str,
+    dry_run: bool,
+) -> None:
+    main_ctx = main_contexts.get(str(main_id))
+    if not main_ctx:
+        return
+    main_project_id, main_view_id, main_buckets = main_ctx
+    move_task_to_bucket(
+        api,
+        main_project_id,
+        main_view_id,
+        bucket_id(main_buckets, "Blocked"),
+        main_id,
+        dry_run,
+    )
+    add_comment(api, main_id, comment, dry_run)
+
+
+def reconcile_runs(
+    api: VikunjaClient,
+    config: RuntimeConfig,
+    state: dict[str, Any],
+    manager_project_id: int,
+    manager_view_id: int,
+    manager_buckets: dict[str, dict[str, Any]],
+    main_contexts: dict[str, tuple[int, int, dict[str, dict[str, Any]]]],
+    dry_run: bool,
+) -> None:
+    changed = False
+    for main_id, record in list(state.get("dispatches", {}).items()):
+        if not isinstance(record, dict) or record.get("status") != "working":
+            continue
+        try:
+            main_task_id = int(main_id)
+            worker_task_id = int(record.get("worker_task_id") or 0)
+        except (TypeError, ValueError):
+            record["status"] = "blocked"
+            record["finished_at"] = utc_now()
+            record["blocker"] = "invalid task id in local state"
+            changed = True
+            continue
+        if worker_task_id <= 0:
+            record["status"] = "blocked"
+            record["finished_at"] = utc_now()
+            record["blocker"] = "missing worker task id in local state"
+            changed = True
+            continue
+        exit_path_raw = str(record.get("exit_path") or "").strip()
+        exit_path = Path(exit_path_raw) if exit_path_raw else None
+        pid = record.get("pid")
+        if exit_path and exit_path.is_file():
+            rc_text = exit_path.read_text(encoding="utf-8").strip()
+            rc = int(rc_text) if rc_text.isdigit() else 1
+            if rc == 0:
+                add_comment(
+                    api,
+                    worker_task_id,
+                    "Hermes Dev Team worker finished with exit code 0. "
+                    "Move through manager review before applying to the integration worktree.\n\n"
+                    f"Log: `{record.get('log_path')}`\n"
+                    f"Worktree: `{record.get('worktree_path')}`",
+                    dry_run,
+                )
+                move_task_to_bucket(
+                    api,
+                    manager_project_id,
+                    manager_view_id,
+                    bucket_id(manager_buckets, "Integrating"),
+                    worker_task_id,
+                    dry_run,
+                )
+                record["status"] = "integrating"
+            else:
+                add_comment(
+                    api,
+                    worker_task_id,
+                    f"Hermes Dev Team worker exited with code {rc}.\n\nLog: `{record.get('log_path')}`",
+                    dry_run,
+                )
+                move_task_to_bucket(
+                    api,
+                    manager_project_id,
+                    manager_view_id,
+                    bucket_id(manager_buckets, "Blocked"),
+                    worker_task_id,
+                    dry_run,
+                )
+                block_main_task(
+                    api,
+                    main_contexts,
+                    main_task_id,
+                    f"Hermes Dev Team worker task #{worker_task_id} failed with exit code {rc}. "
+                    f"Log: `{record.get('log_path')}`",
+                    dry_run,
+                )
+                record["status"] = "blocked"
+            record["finished_at"] = utc_now()
+            changed = True
+        elif isinstance(pid, int) and pid_alive(pid):
+            continue
+        else:
+            if exit_path and exit_path.exists() and not exit_path.is_file():
+                reason = f"exit code path is not a file: `{exit_path}`"
+            elif exit_path:
+                reason = f"worker process is no longer running and did not write exit code file `{exit_path}`"
+            else:
+                reason = "worker process is no longer running and local state has no exit code path"
+            add_comment(
+                api,
+                worker_task_id,
+                f"Hermes Dev Team worker blocked: {reason}.",
+                dry_run,
+            )
+            move_task_to_bucket(
+                api,
+                manager_project_id,
+                manager_view_id,
+                bucket_id(manager_buckets, "Blocked"),
+                worker_task_id,
+                dry_run,
+            )
+            block_main_task(
+                api,
+                main_contexts,
+                main_task_id,
+                f"Hermes Dev Team worker task #{worker_task_id} is blocked: {reason}.",
+                dry_run,
+            )
+            record["status"] = "blocked"
+            record["finished_at"] = utc_now()
+            record["blocker"] = reason
+            changed = True
+    if changed:
+        save_state(config, state, dry_run)
+
+
+def dispatch_task(
+    api: VikunjaClient,
+    config: RuntimeConfig,
+    state: dict[str, Any],
+    main_task: dict[str, Any],
+    main_project: dict[str, Any],
+    main_view_id: int,
+    main_buckets: dict[str, dict[str, Any]],
+    manager_project_id: int,
+    manager_view_id: int,
+    manager_buckets: dict[str, dict[str, Any]],
+    repos: list[Path],
+    dry_run: bool,
+) -> bool:
+    main_task_id = int(main_task["id"])
+    repo = infer_repo(main_task, main_project, repos)
+    if repo is None:
+        move_task_to_bucket(
+            api,
+            int(main_project["id"]),
+            main_view_id,
+            bucket_id(main_buckets, "Blocked"),
+            main_task_id,
+            dry_run,
+        )
+        add_comment(
+            api,
+            main_task_id,
+            "Hermes Dev Team blocked: could not infer the local repository from the task text. "
+            "Add a GitHub URL or repository name to the task.",
+            dry_run,
+        )
+        return False
+
+    try:
+        worktree, branch = ensure_worktree(repo, config.worktree_root, main_task_id, task_title(main_task), dry_run)
+    except (OSError, subprocess.SubprocessError) as exc:
+        move_task_to_bucket(
+            api,
+            int(main_project["id"]),
+            main_view_id,
+            bucket_id(main_buckets, "Blocked"),
+            main_task_id,
+            dry_run,
+        )
+        add_comment(
+            api,
+            main_task_id,
+            f"Hermes Dev Team blocked: could not create the worker worktree for `{repo}`.\n\n{exc}",
+            dry_run,
+        )
+        return False
+
+    worker_task = create_worker_task(
+        api,
+        config,
+        manager_project_id,
+        main_task,
+        main_project,
+        repo,
+        worktree,
+        branch,
+        dry_run,
+    )
+    if worker_task is None:
+        return True
+
+    worker_task_id = int(worker_task["id"])
+    create_relation(api, main_task_id, worker_task_id, dry_run)
+    move_task_to_bucket(
+        api,
+        manager_project_id,
+        manager_view_id,
+        bucket_id(manager_buckets, "Queued"),
+        worker_task_id,
+        dry_run,
+    )
+    try:
+        launch = launch_worker(config, main_task, worker_task, repo, worktree, branch, dry_run)
+    except (ConfigError, OSError, subprocess.SubprocessError) as exc:
+        move_task_to_bucket(
+            api,
+            manager_project_id,
+            manager_view_id,
+            bucket_id(manager_buckets, "Blocked"),
+            worker_task_id,
+            dry_run,
+        )
+        move_task_to_bucket(
+            api,
+            int(main_project["id"]),
+            main_view_id,
+            bucket_id(main_buckets, "Blocked"),
+            main_task_id,
+            dry_run,
+        )
+        add_comment(
+            api,
+            worker_task_id,
+            f"Hermes Dev Team blocked: worker command failed to start.\n\n{exc}",
+            dry_run,
+        )
+        add_comment(
+            api,
+            main_task_id,
+            f"Hermes Dev Team blocked: worker task #{worker_task_id} failed to start.\n\n{exc}",
+            dry_run,
+        )
+        state.setdefault("dispatches", {})[str(main_task_id)] = {
+            "status": "blocked",
+            "main_task_id": main_task_id,
+            "worker_task_id": worker_task_id,
+            "repo_path": str(repo),
+            "worktree_path": str(worktree),
+            "branch": branch,
+            "blocked_at": utc_now(),
+            "blocker": "worker command failed to start",
+        }
+        save_state(config, state, dry_run)
+        return False
+
+    move_task_to_bucket(
+        api,
+        manager_project_id,
+        manager_view_id,
+        bucket_id(manager_buckets, "Working"),
+        worker_task_id,
+        dry_run,
+    )
+    move_task_to_bucket(
+        api,
+        int(main_project["id"]),
+        main_view_id,
+        bucket_id(main_buckets, "Doing"),
+        main_task_id,
+        dry_run,
+    )
+    add_comment(
+        api,
+        main_task_id,
+        f"{DISPATCH_MARKER}: dispatched to worker task #{worker_task_id}.\n\n"
+        f"Worker task: {task_url(config, worker_task_id)}\n"
+        f"Repository: `{repo}`\n"
+        f"Worker worktree: `{worktree}`\n"
+        f"Branch: `{branch}`",
+        dry_run,
+    )
+    add_comment(
+        api,
+        worker_task_id,
+        f"Hermes Dev Team worker launched for main task #{main_task_id}.\n\n"
+        f"PID: `{launch.get('pid')}`\n"
+        f"Log: `{launch.get('log_path')}`",
+        dry_run,
+    )
+    state.setdefault("dispatches", {})[str(main_task_id)] = {
+        "status": "working",
+        "main_task_id": main_task_id,
+        "worker_task_id": worker_task_id,
+        "repo_path": str(repo),
+        "worktree_path": str(worktree),
+        "branch": branch,
+        "pid": launch.get("pid"),
+        "run_dir": launch.get("run_dir"),
+        "log_path": launch.get("log_path"),
+        "exit_path": launch.get("exit_path"),
+        "dispatched_at": utc_now(),
+    }
+    save_state(config, state, dry_run)
+    return True
+
+
+def validate_bucket_config(name: str, buckets: list[str], required: list[str]) -> None:
+    if not buckets:
+        raise ConfigError(f"dev_team.{name} must contain at least one bucket")
+    missing = [bucket for bucket in required if bucket not in buckets]
+    if missing:
+        raise ConfigError(f"dev_team.{name} is missing required buckets: {', '.join(missing)}")
+
+
+def validate_runnable(config: RuntimeConfig, require_worker_command: bool) -> None:
+    if not config.enabled:
+        return
+    if not config.manager_identity:
+        raise ConfigError("manager identity is required; set dev_team.manager_identity, ZULIP_EMAIL, or HV_AGENT_EMAIL")
+    if not config.vikunja_token:
+        raise ConfigError("HV_VIKUNJA_TOKEN is required")
+    validate_bucket_config("main_buckets", config.main_buckets, DEFAULT_MAIN_BUCKETS)
+    validate_bucket_config("manager_buckets", config.manager_buckets, DEFAULT_MANAGER_BUCKETS)
+    if require_worker_command and not config.worker_command:
+        raise ConfigError("dev_team.worker_command or HV_HERMES_WORKER_COMMAND is required")
+
+
+def run_once(config: RuntimeConfig, args: argparse.Namespace) -> int:
+    if not config.enabled:
+        print("Dev Team Mode skipped: dev_team.enabled is not true")
+        return 0
+    validate_runnable(config, require_worker_command=not args.no_dispatch)
+    if not args.dry_run:
+        config.worktree_root.mkdir(parents=True, exist_ok=True)
+        config.integration_root.mkdir(parents=True, exist_ok=True)
+    repos = discover_repos(config.repo_search_roots)
+    if not repos:
+        print("warning: no git repositories found under configured repo_search_roots", file=sys.stderr)
+
+    api = VikunjaClient(config.vikunja_url, config.vikunja_token)
+    state = load_state(config)
+    projects = [project for project in api.paged_list("/projects", {"is_archived": "false"}) if isinstance(project, dict)]
+    manager_project = ensure_project(api, projects, config.manager_project_name, args.dry_run)
+    if manager_project is None:
+        return 0
+    manager_project_id = int(manager_project["id"])
+    manager_view = ensure_kanban_view(api, manager_project, args.dry_run)
+    if manager_view is None:
+        return 0
+    manager_view_id = int(manager_view["id"])
+    manager_buckets = ensure_buckets(
+        api,
+        manager_project_id,
+        manager_view_id,
+        config.manager_buckets,
+        args.dry_run,
+    )
+
+    watch_projects = select_watch_projects(projects, config, manager_project_id)
+    main_contexts: dict[str, tuple[int, int, dict[str, dict[str, Any]]]] = {}
+    dispatchable: list[tuple[dict[str, Any], dict[str, Any], int, dict[str, dict[str, Any]]]] = []
+    for project in watch_projects:
+        view = first_kanban_view(api, project)
+        if view is None:
+            continue
+        project_id = int(project["id"])
+        view_id = int(view["id"])
+        buckets = ensure_buckets(api, project_id, view_id, config.main_buckets, args.dry_run)
+        tasks = kanban_tasks(api, project_id, view_id)
+        for task in tasks:
+            if not isinstance(task, dict) or task.get("done"):
+                continue
+            task_id = str(task.get("id"))
+            main_contexts[task_id] = (project_id, view_id, buckets)
+            if str(task.get("_bucket_title") or "") != config.main_buckets[0]:
+                continue
+            if already_dispatched(api, state, int(task_id)):
+                continue
+            dispatchable.append((task, project, view_id, buckets))
+
+    reconcile_runs(
+        api,
+        config,
+        state,
+        manager_project_id,
+        manager_view_id,
+        manager_buckets,
+        main_contexts,
+        args.dry_run,
+    )
+
+    if args.no_dispatch:
+        return 0
+
+    dispatched = 0
+    for task, project, view_id, buckets in dispatchable:
+        if dispatched >= args.max_dispatch:
+            break
+        try:
+            if dispatch_task(
+                api,
+                config,
+                state,
+                task,
+                project,
+                view_id,
+                buckets,
+                manager_project_id,
+                manager_view_id,
+                manager_buckets,
+                repos,
+                args.dry_run,
+            ):
+                dispatched += 1
+        except (ApiError, ConfigError, subprocess.SubprocessError) as exc:
+            print(f"failed to dispatch task #{task.get('id')}: {exc}", file=sys.stderr)
+            return 1
+    print(f"Dev Team Mode checked {len(watch_projects)} projects; dispatched {dispatched} task(s).")
+    return 0
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--config", help="Hermes config YAML path. Default: $HERMES_HOME/config.yaml or ~/.hermes/config.yaml")
+    parser.add_argument("--env-file", help="Hermes env file path. Default: $HERMES_HOME/.env or ~/.hermes/.env")
+    parser.add_argument("--dry-run", action="store_true", help="Read state and print intended writes without mutating Vikunja, git, or local state")
+    run_mode = parser.add_mutually_exclusive_group()
+    run_mode.add_argument("--once", dest="loop", action="store_false", help="Run one reconciliation cycle. This is the default.")
+    run_mode.add_argument("--loop", dest="loop", action="store_true", help="Run continuously instead of once")
+    parser.add_argument("--interval", type=int, help="Polling interval in seconds for --loop")
+    parser.add_argument("--max-dispatch", type=int, default=1, help="Maximum new worker tasks to dispatch per run")
+    parser.add_argument("--no-dispatch", action="store_true", help="Only reconcile existing worker runs and ensure board structure")
+    parser.add_argument("--print-state", action="store_true", help="Print local manager state and exit")
+    parser.set_defaults(loop=False)
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str]) -> int:
+    args = parse_args(argv)
+    config = resolve_config(args)
+    if args.print_state:
+        print(json.dumps(load_state(config), indent=2, sort_keys=True))
+        return 0
+    interval = args.interval or config.poll_interval_seconds
+    while True:
+        try:
+            rc = run_once(config, args)
+        except (ApiError, ConfigError) as exc:
+            print(f"hv-hermes-dev-team-manager: {exc}", file=sys.stderr)
+            rc = 1
+        if not args.loop:
+            return rc
+        if rc != 0:
+            time.sleep(min(interval, 60))
+        else:
+            time.sleep(interval)
+
+
+if __name__ == "__main__":
+    signal.signal(signal.SIGINT, signal.default_int_handler)
+    raise SystemExit(main(sys.argv[1:]))

@@ -67,6 +67,12 @@ The worker should return reviewable output in its worktree and exit `0` when it
 is ready for manager review. Non-zero exits, dirty state that cannot be
 understood, or missing output are blockers.
 
+`hv-hermes-dev-team-manager` may perform the mechanical sidecar work: provision
+Vikunja buckets, create worker tasks, create worker worktrees, launch the
+configured worker command, and move finished worker runs to `Integrating` or
+`Blocked`. Treat `Integrating` as a manager-review queue, not as approval to
+apply changes automatically.
+
 ## Integration Gate
 
 Before applying worker output:
