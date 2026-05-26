@@ -66,8 +66,11 @@ Workers are per-task runs. For each dispatched issue, the manager:
 7. Moves the main-board issue to `Review` for human QA.
 
 The worker command is configured locally with `HV_HERMES_WORKER_COMMAND` or the
-equivalent Hermes config value. Workers must not edit the integration worktree
-directly.
+equivalent Hermes config value. `hv-hermes-dev-team-worker` is the default
+worker wrapper supplied by have-config; it launches a non-interactive Hermes run
+inside the sidecar-created worktree and passes the task/worktree context through
+the `HERMES_DEV_TEAM_*` environment variables. Workers must not edit the
+integration worktree directly.
 
 ## Manager Sidecar
 
@@ -116,7 +119,7 @@ dev_team:
     - ~/Work/anytown/repos
   worktree_root: ~/.hermes/dev-team/worktrees
   integration_root: ~/.hermes/dev-team/integration
-  worker_command: "${HV_HERMES_WORKER_COMMAND}"
+  worker_command: "hv-hermes-dev-team-worker"
   main_buckets: [To-Do, Blocked, Doing, Review, Done]
   manager_buckets: [Queued, Working, Integrating, Blocked, Closed]
   status_updates: on_request

@@ -165,6 +165,8 @@ script links are managed:
 - `hv-hermes-vikunja-task-updates` — polls Vikunja task updates
 - `hv-hermes-dev-team-manager` — runs the Dev Team Mode sidecar for board
   provisioning, worker dispatch, and worker process status
+- `hv-hermes-dev-team-worker` — runs one Hermes worker agent inside the
+  sidecar-created isolated worktree
 - `hv-hermes-github-cricket-issues` — polls GitHub open issues labeled
   `cricket`
 
