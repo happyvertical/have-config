@@ -57,7 +57,15 @@ A Hermes Zulip adapter should:
 6. Use default-deny authorization unless `ZULIP_ALLOWED_USERS` is configured or
    `ZULIP_ALLOW_ALL_USERS=true` is explicitly set for a trusted/dev environment.
 7. Re-register the queue when Zulip returns an expired or invalid queue ID.
-8. Send responses through `POST /api/v1/messages` without logging token values.
+8. Show responsiveness while the agent is working by sending Zulip typing
+   notifications through `POST /api/v1/typing`:
+   - DMs use `type=direct`, `op=start|stop`, and `to` as the JSON-encoded
+     recipient user ID list (for example, `[8]`).
+   - Stream topics use `type=stream`, `op=start|stop`, numeric `stream_id`, and
+     `topic`.
+   - Skip typing notifications when only a stream name is available and no
+     numeric `stream_id` has been resolved.
+9. Send responses through `POST /api/v1/messages` without logging token values.
 
 ## Setup verification
 
@@ -67,6 +75,8 @@ A non-secret verification pass should report:
 - whether `ZULIP_SITE_URL`, `ZULIP_EMAIL`, and `ZULIP_API_KEY` are present
 - whether `GET /api/v1/users/me` succeeds for the configured account
 - whether a register/events long-poll loop starts without auth errors
+- whether typing start/stop payload construction covers both `dm:<user_id>` and
+  `stream:<stream_id>` targets without exposing secrets
 - the configured home channel identifier, if any, without exposing message content
 
 If credentials are missing, report Zulip as `Blocked` with the missing variable

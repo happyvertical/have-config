@@ -74,7 +74,7 @@
       "auth": "Per-agent Zulip account API credentials from Warden/local environment.",
       "cli": {
         "status": "hermes-gateway-long-poll",
-        "notes": "Hermes gateway adapters should use Zulip /api/v1/register and /api/v1/events long polling with platforms.zulip.enabled=true plus ZULIP_SITE_URL, ZULIP_EMAIL, and ZULIP_API_KEY for the per-agent Zulip account. Response readiness also needs ZULIP_ALLOWED_USERS or explicit ZULIP_ALLOW_ALL_USERS=true for default-deny authorization."
+        "notes": "Hermes gateway adapters should use Zulip /api/v1/register and /api/v1/events long polling with platforms.zulip.enabled=true plus ZULIP_SITE_URL, ZULIP_EMAIL, and ZULIP_API_KEY for the per-agent Zulip account. While processing, adapters should use /api/v1/typing start/stop notifications for DMs and numeric stream IDs. Response readiness also needs ZULIP_ALLOWED_USERS or explicit ZULIP_ALLOW_ALL_USERS=true for default-deny authorization."
       }
     },
     {
