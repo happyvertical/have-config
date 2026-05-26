@@ -55,6 +55,13 @@
     },
     {
       "agent": "no-agent",
+      "name": "hv-hermes-dev-team-worker",
+      "path": "reusable-scripts/hermes/no-agent/hv-hermes-dev-team-worker",
+      "executable": true,
+      "description": "Run one Hermes Dev Team worker agent inside the sidecar-created isolated worktree."
+    },
+    {
+      "agent": "no-agent",
       "name": "hv-hermes-github-cricket-issues",
       "path": "reusable-scripts/hermes/no-agent/hv-hermes-github-cricket-issues",
       "executable": true,

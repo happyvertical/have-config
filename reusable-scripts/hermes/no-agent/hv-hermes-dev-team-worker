@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# Run a single Hermes Dev Team worker task inside the sidecar-created worktree.
+#
+# The manager sidecar sets HERMES_DEV_TEAM_* environment variables and invokes
+# this script from the isolated worker worktree. The worker must leave reviewable
+# changes in that worktree and exit 0 only when ready for manager review.
+set -euo pipefail
+
+if ! command -v hermes >/dev/null 2>&1; then
+  echo "hv-hermes-dev-team-worker: hermes CLI not found on PATH" >&2
+  exit 127
+fi
+
+required_vars=(
+  HERMES_DEV_TEAM_MAIN_TASK_ID
+  HERMES_DEV_TEAM_MAIN_TASK_URL
+  HERMES_DEV_TEAM_WORKER_TASK_ID
+  HERMES_DEV_TEAM_WORKER_TASK_URL
+  HERMES_DEV_TEAM_REPO_PATH
+  HERMES_DEV_TEAM_WORKTREE_PATH
+  HERMES_DEV_TEAM_BRANCH
+  HERMES_DEV_TEAM_INTEGRATION_ROOT
+  HERMES_DEV_TEAM_MANAGER_IDENTITY
+)
+for var in "${required_vars[@]}"; do
+  if [[ -z "${!var:-}" ]]; then
+    echo "hv-hermes-dev-team-worker: missing required environment variable $var" >&2
+    exit 64
+  fi
+done
+
+if [[ ! -d "$HERMES_DEV_TEAM_WORKTREE_PATH" ]]; then
+  echo "hv-hermes-dev-team-worker: worktree does not exist: $HERMES_DEV_TEAM_WORKTREE_PATH" >&2
+  exit 66
+fi
+
+cd "$HERMES_DEV_TEAM_WORKTREE_PATH"
+
+prompt_file="$(mktemp)"
+cleanup() {
+  rm -f "$prompt_file"
+}
+trap cleanup EXIT
+
+cat >"$prompt_file" <<'PROMPT'
+You are a Hermes Dev Team worker agent running in an isolated git worktree.
+
+Task context is provided in environment variables:
+- HERMES_DEV_TEAM_MAIN_TASK_ID / HERMES_DEV_TEAM_MAIN_TASK_URL: canonical user-visible Vikunja issue.
+- HERMES_DEV_TEAM_WORKER_TASK_ID / HERMES_DEV_TEAM_WORKER_TASK_URL: internal worker task.
+- HERMES_DEV_TEAM_REPO_PATH: source repository path.
+- HERMES_DEV_TEAM_WORKTREE_PATH: this isolated worktree; make changes here only.
+- HERMES_DEV_TEAM_BRANCH: branch for this work.
+- HERMES_DEV_TEAM_INTEGRATION_ROOT: manager-owned integration root; do not edit it.
+- HERMES_DEV_TEAM_MANAGER_IDENTITY: manager identity.
+- HERMES_DEV_TEAM_DEV_SERVER_URL: optional dev server URL.
+
+Follow this contract:
+1. Inspect the worker task and linked main task if tools are available; otherwise use the URLs and repository context in this prompt.
+2. Make only scoped changes for the linked main task in HERMES_DEV_TEAM_WORKTREE_PATH.
+3. Do not edit the integration root and do not move main-board cards.
+4. Run the smallest useful verification for the change.
+5. Leave reviewable output in the worktree and summarize what changed, tests run, and blockers.
+6. Exit non-zero if you cannot produce reviewable output.
+PROMPT
+
+{
+  printf '\nConcrete values for this run:\n'
+  printf -- '- Main task: #%s %s\n' "$HERMES_DEV_TEAM_MAIN_TASK_ID" "$HERMES_DEV_TEAM_MAIN_TASK_URL"
+  printf -- '- Worker task: #%s %s\n' "$HERMES_DEV_TEAM_WORKER_TASK_ID" "$HERMES_DEV_TEAM_WORKER_TASK_URL"
+  printf -- '- Repository: %s\n' "$HERMES_DEV_TEAM_REPO_PATH"
+  printf -- '- Worktree: %s\n' "$HERMES_DEV_TEAM_WORKTREE_PATH"
+  printf -- '- Branch: %s\n' "$HERMES_DEV_TEAM_BRANCH"
+  printf -- '- Integration root: %s\n' "$HERMES_DEV_TEAM_INTEGRATION_ROOT"
+  printf -- '- Manager: %s\n' "$HERMES_DEV_TEAM_MANAGER_IDENTITY"
+  if [[ -n "${HERMES_DEV_TEAM_DEV_SERVER_URL:-}" ]]; then
+    printf -- '- Dev server: %s\n' "$HERMES_DEV_TEAM_DEV_SERVER_URL"
+  fi
+} >>"$prompt_file"
+
+# Use non-interactive Hermes. The sidecar already isolates each worker in a git
+# worktree, so do not ask Hermes to create another one.
+exec hermes chat \
+  --query "$(cat "$prompt_file")" \
+  --source "hermes-dev-team-worker" \
+  --quiet

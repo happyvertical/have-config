@@ -102,6 +102,13 @@ cat > "$HAVE_CONFIG_DIR/hv/manifest.json" <<'JSON'
     },
     {
       "agent": "no-agent",
+      "name": "hv-hermes-dev-team-worker",
+      "path": "reusable-scripts/hermes/no-agent/hv-hermes-dev-team-worker",
+      "executable": true,
+      "description": "fixture dev team worker script"
+    },
+    {
+      "agent": "no-agent",
       "name": "inline-notify",
       "content": "#!/usr/bin/env bash\necho inline notify",
       "executable": true,
@@ -133,6 +140,11 @@ EOF
 cat > "$HAVE_CONFIG_DIR/reusable-scripts/hermes/no-agent/hv-hermes-dev-team-manager" <<'EOF'
 #!/usr/bin/env bash
 echo fixture dev team manager
+EOF
+
+cat > "$HAVE_CONFIG_DIR/reusable-scripts/hermes/no-agent/hv-hermes-dev-team-worker" <<'EOF'
+#!/usr/bin/env bash
+echo fixture dev team worker
 EOF
 
 cat > "$HAVE_CONFIG_DIR/profiles/hermes/manifest.json" <<'JSON'
@@ -258,6 +270,9 @@ test -x "$HOME_DIR/.local/bin/fixture-notify"
 grep -q "fixture dev team manager" "$OUTPUT_DIR/scripts/hv-hermes-dev-team-manager"
 grep -q "fixture dev team manager" "$HOME_DIR/.local/bin/hv-hermes-dev-team-manager"
 test -x "$HOME_DIR/.local/bin/hv-hermes-dev-team-manager"
+grep -q "fixture dev team worker" "$OUTPUT_DIR/scripts/hv-hermes-dev-team-worker"
+grep -q "fixture dev team worker" "$HOME_DIR/.local/bin/hv-hermes-dev-team-worker"
+test -x "$HOME_DIR/.local/bin/hv-hermes-dev-team-worker"
 grep -q "inline notify" "$OUTPUT_DIR/scripts/inline-notify"
 grep -q "inline notify" "$HOME_DIR/.local/bin/inline-notify"
 test -x "$HOME_DIR/.local/bin/inline-notify"
@@ -269,6 +284,7 @@ grep -q '"key": "codex:command:review-cycle"' "$LOCK_PATH"
 grep -q '"key": "codex:skill:hermes-manager"' "$LOCK_PATH"
 grep -q '"key": "no-agent:script:fixture-notify"' "$LOCK_PATH"
 grep -q '"key": "no-agent:script:hv-hermes-dev-team-manager"' "$LOCK_PATH"
+grep -q '"key": "no-agent:script:hv-hermes-dev-team-worker"' "$LOCK_PATH"
 grep -q '"key": "no-agent:script:inline-notify"' "$LOCK_PATH"
 grep -q '`dotfiles` priority 10: available' "$REPORT_PATH"
 grep -q "invalid declared priority 'dynamic' ignored; using fixed 30" "$REPORT_PATH"
