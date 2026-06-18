@@ -17,6 +17,7 @@
 - Use `idp.happyvertical.com` for HappyVertical identity and SSO.
 - Use Warden for password sharing and retrieval.
 - Use SOPS only for machine-provided encrypted environment material and templates; do not place real user-specific values in this repo.
+- Project Hermes agents should have a local `agent-contract.json` and `project-brief.md` generated from have-config. Use those files as the standing project role, repo, permission, Vikunja, SOPS, and runtime context.
 
 ## HappyVertical Services
 - Use `warden.happyvertical.com` for approved password and shared secret access.
@@ -27,3 +28,4 @@
 - Use `bifrost.happyvertical.com` as the gateway.
 - Use `context.happyvertical.com` for prompts, resources, and memory snapshots.
 - Hermes agents run `check-setup` after bootstrap or account changes to verify service access.
+- Hermes agents should keep their installed have-config snapshot current and report drift when local generated runtime files lag the source revision.

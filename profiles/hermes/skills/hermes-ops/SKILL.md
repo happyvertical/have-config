@@ -60,7 +60,7 @@ Required local environment:
   repository access matter
 - `HV_HERMES_STATE_DIR` when watcher cursor files should live somewhere other
   than `$XDG_STATE_HOME/hv` or `~/.local/state/hv`
-- `ZULIP_SITE_URL`, `ZULIP_EMAIL`, and `ZULIP_API_KEY` when the Hermes gateway
+- `ZULIP_SITE`, `ZULIP_EMAIL`, and `ZULIP_API_KEY` when the Hermes gateway
   should join HappyVertical Zulip and long-poll for immediate chat responses
 
 Recommended cadence:
@@ -80,7 +80,7 @@ per-agent Zulip account in the local Hermes `.env` or approved secret source.
 Do not require a Zulip bot account; cricket currently uses a normal Zulip
 account with API credentials.
 
-- `ZULIP_SITE_URL=https://chat.happyvertical.com`
+- `ZULIP_SITE=https://chat.happyvertical.com`
 - `ZULIP_EMAIL`
 - `ZULIP_API_KEY`
 - optional `ZULIP_ALLOWED_USERS`, `ZULIP_ALLOW_ALL_USERS`, `ZULIP_HOME_CHANNEL`,

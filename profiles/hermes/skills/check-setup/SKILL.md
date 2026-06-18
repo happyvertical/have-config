@@ -31,8 +31,10 @@ Run these checks:
      assigned account can authenticate.
 3. Vikunja project management
    - Confirm `https://todo.happyvertical.com` is reachable.
+   - If `agent-contract.json` or `project-brief.md` exists, confirm the
+     configured project, board, buckets, and labels match the selected contract.
    - If `HV_VIKUNJA_URL` and `HV_VIKUNJA_TOKEN` are set, make a read-only API
-     request that proves access.
+     request that proves access to the configured project board.
 4. Warden
    - Confirm `https://warden.happyvertical.com` is reachable.
    - Verify the agent can access its approved credential source without
@@ -53,9 +55,9 @@ Run these checks:
    - Confirm `https://chat.happyvertical.com` is reachable.
    - Confirm `hermes config path` resolves to a local config file and that it
      has `platforms.zulip.enabled: true` when Zulip chat response is expected.
-     If only env vars are present, mark gateway readiness as `Blocked` until the
-     platform is enabled.
-   - Confirm `ZULIP_SITE_URL`, `ZULIP_EMAIL`, and `ZULIP_API_KEY` are present
+     If credentials are present but the config is not enabled after bootstrap,
+     mark gateway readiness as `Blocked`.
+   - Confirm `ZULIP_SITE`, `ZULIP_EMAIL`, and `ZULIP_API_KEY` are present
      when Zulip chat response is expected; do not print their values.
    - Report whether authorization is configured with `ZULIP_ALLOWED_USERS` or
      explicit `ZULIP_ALLOW_ALL_USERS=true`; otherwise mark response readiness as
@@ -88,6 +90,28 @@ Run these checks:
      local task explicitly requires otherwise.
    - If a dev server URL is configured for the active project or task, verify it
      is reachable from the local network.
+9. Agent contract and permissions
+   - Confirm `agent-contract.json`, `project-brief.md`, and `agent-lock.json`
+     exist when `HV_AGENT_CONTRACT` is set.
+   - Confirm the lockfile records the selected contract slug, identity, primary
+     repo, and Hindsight bank.
+   - Confirm repo access matches the contract permission summary without
+     broadening scope.
+   - Confirm Kubernetes namespace access is limited to the contract namespaces
+     and the Hermes runtime namespace.
+   - Confirm SOPS readiness by checking expected profile names, encrypted file
+     presence, and key names only. Do not decrypt or print secret values unless
+     the user explicitly requests a safe secret operation.
+   - Confirm have-config freshness by comparing the installed source revision
+     in `agent-lock.json` with the local `have-config` checkout when available.
+10. Project leader operating mode
+   - Confirm substantial development work is represented on Vikunja before
+     implementation starts.
+   - Confirm the task uses the contract buckets: `Inbox`, `Ready`,
+     `In Progress`, `Review`, `Blocked`, and `Done`, unless the contract names
+     a project-specific exception.
+   - Confirm long-running, cross-repo, CI, deploy, or large development work
+     uses sub-agents/sessions and records worker state on the main task.
 
 If a check cannot be performed noninteractively, mark it `Blocked` and state
 the missing credential, connector, environment variable, CLI, or local config.

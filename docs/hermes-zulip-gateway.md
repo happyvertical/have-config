@@ -11,7 +11,7 @@ one; cricket currently uses a normal Zulip account with API credentials.
 Do not commit these values. Store them in the local Hermes `.env`, Warden, or the
 approved machine-local secret source:
 
-- `ZULIP_SITE_URL=https://chat.happyvertical.com`
+- `ZULIP_SITE=https://chat.happyvertical.com`
 - `ZULIP_EMAIL` — Zulip account email for the agent identity
 - `ZULIP_API_KEY` — Zulip API key for that agent account
 
@@ -29,8 +29,9 @@ successfully but refuse to respond to users.
 ## Runtime expectation
 
 Before starting the gateway, the local Hermes config must enable the Zulip
-platform. Environment variables alone only make credentials available; they do
-not opt the gateway into running the Zulip adapter.
+platform. The standard Kubernetes bootstrap enables it automatically when
+`ZULIP_SITE`, `ZULIP_EMAIL`, and `ZULIP_API_KEY` are present. Other runtimes
+must set the config explicitly.
 
 ```yaml
 platforms:
@@ -72,7 +73,7 @@ A Hermes Zulip adapter should:
 A non-secret verification pass should report:
 
 - whether Hermes config has `platforms.zulip.enabled: true`
-- whether `ZULIP_SITE_URL`, `ZULIP_EMAIL`, and `ZULIP_API_KEY` are present
+- whether `ZULIP_SITE`, `ZULIP_EMAIL`, and `ZULIP_API_KEY` are present
 - whether `GET /api/v1/users/me` succeeds for the configured account
 - whether a register/events long-poll loop starts without auth errors
 - whether typing start/stop payload construction covers both `dm:<user_id>` and

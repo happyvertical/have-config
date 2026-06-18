@@ -20,7 +20,9 @@ tokens, cookies, passwords, or decrypted secret values.
      acknowledgements of created issues, and blockers requiring human action.
 2. Own main-board state.
    - Main project cards are canonical user-visible issues.
-   - Move main cards through `To-Do`, `Blocked`, `Doing`, `Review`, and `Done`.
+   - Move main cards through `Inbox`, `Ready`, `In Progress`, `Review`,
+     `Blocked`, and `Done` unless the agent contract names a project-specific
+     exception.
    - Auto-provision missing expected buckets through the Hermes runtime.
 3. Own worker dispatch.
    - Use one manager project named `Hermes Manager - <email>`.
@@ -40,6 +42,10 @@ For each QA message, decide whether to create a new issue, update an existing
 issue, ask for clarification, or ignore conversational noise. Do not create a
 Vikunja task for every Zulip message. Prefer actionable main-board issues with
 clear repro context.
+
+For substantial development work, ensure a main-board task exists before
+implementation starts. Add the primary repo, related repos, acceptance criteria,
+and deploy target when known.
 
 ## Repository Inference
 
@@ -62,6 +68,7 @@ command template or environment:
 - integration worktree path
 - dev server URL when known
 - manager identity
+- selected Hermes agent contract slug, when available
 
 The worker should return reviewable output in its worktree and exit `0` when it
 is ready for manager review. Non-zero exits, dirty state that cannot be
