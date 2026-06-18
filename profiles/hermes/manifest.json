@@ -14,6 +14,18 @@
       "name": "check-setup",
       "path": "commands/codex/check-setup.md",
       "description": "Verify HappyVertical service access for this Hermes agent"
+    },
+    {
+      "agent": "codex",
+      "name": "sync-have-config",
+      "path": "commands/codex/sync-have-config.md",
+      "description": "Refresh have-config and rematerialize local Hermes runtime context"
+    },
+    {
+      "agent": "claude",
+      "name": "sync-have-config",
+      "path": "commands/claude/sync-have-config.md",
+      "description": "Refresh have-config and rematerialize local Hermes runtime context"
     }
   ],
   "skills": [
@@ -48,12 +60,23 @@
     {
       "capability": "zulip",
       "vars": [
-        "ZULIP_SITE_URL",
+        "ZULIP_SITE",
         "ZULIP_EMAIL",
         "ZULIP_API_KEY"
       ],
       "default_enabled": false,
       "description": "Hermes gateway Zulip account API credentials and routing for long-poll chat response."
+    },
+    {
+      "capability": "project-lead",
+      "vars": [
+        "HV_AGENT_CONTRACT",
+        "HV_AGENT_EMAIL",
+        "HV_VIKUNJA_URL",
+        "HV_VIKUNJA_TOKEN"
+      ],
+      "default_enabled": false,
+      "description": "Project Hermes leadership contract, identity, and Vikunja board access."
     },
     {
       "capability": "hermes-dev-team",

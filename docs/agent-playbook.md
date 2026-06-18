@@ -34,6 +34,16 @@ The command should verify:
 - `drive.happyvertical.com` is reachable and WebDAV/OxiCloud access is configured
 - `context.happyvertical.com` is reachable and the agent is configured for
   prompts, resources, and memory
+- selected Hermes agent contract, project brief, repo permissions, SOPS profile,
+  and have-config revision are current when the agent is project-based
+
+## Project Hermes Leadership
+
+Project Hermes agents should read their generated `project-brief.md` before
+taking on project work. Substantial development, CI, deploy, and operations work
+belongs on the configured Vikunja board. Use sub-agents or long-running sessions
+for parallel or long-running work, and keep worker state linked from the main
+Vikunja task.
 
 ## Hermes No-Agent Watchers
 

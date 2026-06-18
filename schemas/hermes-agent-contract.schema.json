@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://happyvertical.com/hermes-agent-contract/v1",
+  "title": "Hermes Agent Contract",
+  "type": "object",
+  "required": [
+    "slug",
+    "kind",
+    "identity",
+    "role",
+    "permissions",
+    "services",
+    "runtime"
+  ],
+  "properties": {
+    "schema": {
+      "const": "https://happyvertical.com/hermes-agent-contract/v1"
+    },
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "kind": {
+      "enum": ["project-hermes", "ops-hermes", "personal-hermes"]
+    },
+    "identity": {
+      "type": "object",
+      "required": ["email", "idp_account"],
+      "properties": {
+        "display_name": { "type": "string" },
+        "email": { "type": "string" },
+        "idp_account": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "role": {
+      "type": "object",
+      "required": ["project_leader", "primary_repo"],
+      "properties": {
+        "project_leader": { "type": "boolean" },
+        "primary_repo": { "type": "string" },
+        "related_repos": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "orientation": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "project_lead": {
+      "type": "object",
+      "properties": {
+        "vikunja": {
+          "type": "object",
+          "required": ["url", "project", "board", "buckets"],
+          "properties": {
+            "url": { "type": "string" },
+            "project": { "type": "string" },
+            "board": { "type": "string" },
+            "buckets": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "labels": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "done_criteria": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          },
+          "additionalProperties": false
+        },
+        "delegation": {
+          "type": "object",
+          "properties": {
+            "use_subagents_for": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "worker_record_required": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "permissions": {
+      "type": "object",
+      "required": ["github"],
+      "properties": {
+        "github": {
+          "type": "object",
+          "additionalProperties": {
+            "enum": ["read", "triage", "pull-request", "maintain", "admin"]
+          }
+        },
+        "kubernetes": {
+          "type": "object",
+          "properties": {
+            "service_account": { "type": "string" },
+            "namespaces": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "rbac_profile": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "sops_profiles": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "warden_paths": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "services": {
+      "type": "object",
+      "additionalProperties": {
+        "enum": ["required", "optional", "pending-human-token", "disabled"]
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "required": ["hindsight_bank"],
+      "properties": {
+        "hindsight_bank": { "type": "string" },
+        "check_setup_required": { "type": "boolean" },
+        "have_config_drift_policy": {
+          "enum": ["report", "report-and-sync"]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

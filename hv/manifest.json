@@ -28,6 +28,30 @@
       "path": "docs/hermes-zulip-gateway.md"
     },
     {
+      "id": "happyvertical.hermes-agent-contract",
+      "targets": [
+        "agents",
+        "claude"
+      ],
+      "path": "docs/hermes-agent-contract.md"
+    },
+    {
+      "id": "happyvertical.project-development-kanban",
+      "targets": [
+        "agents",
+        "claude"
+      ],
+      "path": "docs/project-development-kanban.md"
+    },
+    {
+      "id": "happyvertical.hermes-sops-policy",
+      "targets": [
+        "agents",
+        "claude"
+      ],
+      "path": "docs/hermes-sops-policy.md"
+    },
+    {
       "id": "happyvertical.hermes-dev-team-mode",
       "targets": [
         "agents",
@@ -122,7 +146,7 @@
     {
       "capability": "zulip",
       "vars": [
-        "ZULIP_SITE_URL",
+        "ZULIP_SITE",
         "ZULIP_EMAIL",
         "ZULIP_API_KEY"
       ],
@@ -178,8 +202,9 @@
       "url": "https://todo.happyvertical.com",
       "purpose": "Project management.",
       "cli": {
-        "status": "server-cli-only",
-        "notes": "The official Vikunja CLI is for server/container administration; have-config provides hv-hermes-vikunja-task-updates for notification polling."
+        "status": "happyvertical-wrapper",
+        "tool": "hv-services vikunja",
+        "notes": "Use the HappyVertical wrapper/API CLI with HV_VIKUNJA_URL and HV_VIKUNJA_TOKEN for project boards. The official Vikunja CLI remains server/container-admin focused."
       }
     },
     {
@@ -199,7 +224,7 @@
       "purpose": "Primary team chat and agent-response channel.",
       "cli": {
         "status": "hermes-gateway-long-poll",
-        "notes": "Hermes agents should set platforms.zulip.enabled=true and use a per-agent Zulip account with ZULIP_SITE_URL, ZULIP_EMAIL, and ZULIP_API_KEY; the gateway adapter consumes /api/v1/register and /api/v1/events long polling. Response readiness also needs ZULIP_ALLOWED_USERS or explicit ZULIP_ALLOW_ALL_USERS=true for default-deny authorization."
+        "notes": "Hermes agents should set platforms.zulip.enabled=true and use a per-agent Zulip account with ZULIP_SITE, ZULIP_EMAIL, and ZULIP_API_KEY; ZULIP_SITE_URL is accepted only as a compatibility alias. The gateway adapter consumes /api/v1/register and /api/v1/events long polling. Response readiness also needs ZULIP_ALLOWED_USERS or explicit ZULIP_ALLOW_ALL_USERS=true for default-deny authorization."
       }
     },
     {

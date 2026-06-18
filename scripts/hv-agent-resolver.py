@@ -41,6 +41,18 @@ TARGETS = {
     "claude": "CLAUDE.md",
 }
 
+CONTRACT_SECRET_KEYWORDS = (
+    "api_key",
+    "apikey",
+    "client_secret",
+    "cookie",
+    "password",
+    "private_key",
+    "recovery_code",
+    "secret",
+    "token",
+)
+
 
 @dataclass(frozen=True)
 class SourceLayer:
@@ -124,6 +136,11 @@ def load_json(path: Path) -> dict[str, Any]:
         return json.load(f)
 
 
+def write_json(path: Path, data: dict[str, Any]) -> None:
+    ensure_parent(path)
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def resolve_path(root: Path, value: str | None) -> Path | None:
     if not value:
         return None
@@ -165,6 +182,14 @@ def split_profiles(value: str | None) -> list[str]:
     if not value:
         return []
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def first_env_value(*names: str) -> str:
+    for name in names:
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+    return ""
 
 
 def detect_profiles(home_dir: Path) -> tuple[list[str], list[str]]:
@@ -370,6 +395,282 @@ def collect_service_registry(root: Path) -> list[dict[str, Any]]:
         return []
     data = load_json(registry)
     return [{**service, "source": "services/services.json"} for service in data.get("services", [])]
+
+
+def selected_contract_slug() -> str:
+    return first_env_value(
+        "HV_AGENT_CONTRACT",
+        "HV_AGENT_CONTRACT_SLUG",
+        "HV_AGENT_SLUG",
+        "HERMES_AGENT_ID",
+    )
+
+
+def contract_candidates(
+    slug: str,
+    active_profiles: list[str],
+    have_config: Path,
+    contextforge: Path,
+    local: Path,
+) -> list[tuple[str, Path]]:
+    names = [f"{slug}.json"]
+    candidates: list[tuple[str, Path]] = []
+    candidates.append(("local", local / "contracts" / names[0]))
+    candidates.append(("contextforge", contextforge / "contracts" / names[0]))
+    for profile in active_profiles:
+        candidates.append(
+            (
+                f"profile:{profile}",
+                have_config / "profiles" / profile / "contracts" / names[0],
+            )
+        )
+    candidates.append(("have-config", have_config / "contracts" / names[0]))
+    return candidates
+
+
+def find_agent_contract(
+    active_profiles: list[str],
+    have_config: Path,
+    contextforge: Path,
+    local: Path,
+) -> tuple[dict[str, Any] | None, str | None, str | None, list[str]]:
+    explicit_path = first_env_value("HV_AGENT_CONTRACT_PATH")
+    notes: list[str] = []
+    if explicit_path:
+        path = Path(explicit_path).expanduser().resolve()
+        if not path.exists():
+            raise ValueError(f"HV_AGENT_CONTRACT_PATH does not exist: {path}")
+        data = load_json(path)
+        validate_agent_contract(data, str(path))
+        return data, str(path), data.get("slug"), notes
+
+    slug = selected_contract_slug()
+    if not slug:
+        return None, None, None, notes
+
+    for layer, path in contract_candidates(slug, active_profiles, have_config, contextforge, local):
+        if path.exists():
+            data = load_json(path)
+            validate_agent_contract(data, f"{layer}:{path}")
+            if data.get("slug") != slug:
+                raise ValueError(
+                    f"agent contract slug mismatch: selected {slug!r}, file has {data.get('slug')!r}"
+                )
+            return data, f"{layer}:{path}", slug, notes
+
+    searched = ", ".join(str(path) for _, path in contract_candidates(slug, active_profiles, have_config, contextforge, local))
+    raise ValueError(f"agent contract {slug!r} not found; searched {searched}")
+
+
+def validate_agent_contract(data: dict[str, Any], source: str) -> None:
+    required_top = ["slug", "kind", "identity", "role", "permissions", "services", "runtime"]
+    missing_top = [key for key in required_top if key not in data]
+    if missing_top:
+        raise ValueError(f"{source} missing required contract keys: {', '.join(missing_top)}")
+
+    if not isinstance(data.get("slug"), str) or not data["slug"].strip():
+        raise ValueError(f"{source} contract slug must be a non-empty string")
+    if not isinstance(data.get("kind"), str) or not data["kind"].strip():
+        raise ValueError(f"{source} contract kind must be a non-empty string")
+
+    identity = data.get("identity")
+    if not isinstance(identity, dict):
+        raise ValueError(f"{source} identity must be an object")
+    for key in ["email", "idp_account"]:
+        if not isinstance(identity.get(key), str) or not identity[key].strip():
+            raise ValueError(f"{source} identity.{key} must be a non-empty string")
+
+    role = data.get("role")
+    if not isinstance(role, dict):
+        raise ValueError(f"{source} role must be an object")
+    if not isinstance(role.get("primary_repo"), str) or not role["primary_repo"].strip():
+        raise ValueError(f"{source} role.primary_repo must be a non-empty string")
+    if role.get("project_leader") is not True:
+        raise ValueError(f"{source} role.project_leader must be true for project Hermes contracts")
+
+    project_lead = data.get("project_lead")
+    if not isinstance(project_lead, dict):
+        raise ValueError(f"{source} project_lead must be an object")
+    vikunja = project_lead.get("vikunja")
+    if not isinstance(vikunja, dict):
+        raise ValueError(f"{source} project_lead.vikunja must be an object")
+    for key in ["url", "project", "board"]:
+        if not isinstance(vikunja.get(key), str) or not vikunja[key].strip():
+            raise ValueError(f"{source} project_lead.vikunja.{key} must be a non-empty string")
+    buckets = vikunja.get("buckets")
+    if not isinstance(buckets, list) or not all(isinstance(item, str) and item.strip() for item in buckets):
+        raise ValueError(f"{source} project_lead.vikunja.buckets must be a non-empty string list")
+
+    permissions = data.get("permissions")
+    if not isinstance(permissions, dict):
+        raise ValueError(f"{source} permissions must be an object")
+    if not isinstance(permissions.get("github"), dict):
+        raise ValueError(f"{source} permissions.github must be an object")
+
+    services = data.get("services")
+    if not isinstance(services, dict):
+        raise ValueError(f"{source} services must be an object")
+    runtime = data.get("runtime")
+    if not isinstance(runtime, dict):
+        raise ValueError(f"{source} runtime must be an object")
+    if not isinstance(runtime.get("hindsight_bank"), str) or not runtime["hindsight_bank"].strip():
+        raise ValueError(f"{source} runtime.hindsight_bank must be a non-empty string")
+
+    secret_paths = find_secret_values(data)
+    if secret_paths:
+        raise ValueError(
+            f"{source} appears to contain secret material at: {', '.join(secret_paths)}. "
+            "Use Warden/SOPS references, not secret values."
+        )
+
+
+def find_secret_values(value: Any, path: str = "") -> list[str]:
+    matches: list[str] = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            child_path = f"{path}.{key}" if path else str(key)
+            key_l = str(key).lower()
+            if any(keyword in key_l for keyword in CONTRACT_SECRET_KEYWORDS):
+                if isinstance(child, str) and child.strip() and not is_reference_value(child):
+                    matches.append(child_path)
+            matches.extend(find_secret_values(child, child_path))
+    elif isinstance(value, list):
+        for idx, child in enumerate(value):
+            matches.extend(find_secret_values(child, f"{path}[{idx}]"))
+    return matches
+
+
+def is_reference_value(value: str) -> bool:
+    allowed_prefixes = (
+        "env:",
+        "file:",
+        "kubernetes:",
+        "sops:",
+        "secret:",
+        "vault:",
+        "warden:",
+    )
+    if value.startswith(allowed_prefixes) or "*" in value or value.endswith("_TOKEN"):
+        return True
+    return (
+        value.startswith("hermes-")
+        or value.endswith(".secret.enc.yaml")
+        or value.endswith(".secret.template.yaml")
+    )
+
+
+def list_strings(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).strip()]
+    return []
+
+
+def contract_display_name(identity: dict[str, Any]) -> str:
+    explicit = str(identity.get("display_name", "")).strip()
+    if explicit:
+        return explicit
+    email = str(identity.get("email", "")).strip()
+    if "@" in email:
+        return email.split("@", 1)[0]
+    return email
+
+
+def render_agent_project_brief(contract: dict[str, Any], source: str | None) -> str:
+    identity = contract.get("identity", {})
+    role = contract.get("role", {})
+    permissions = contract.get("permissions", {})
+    project_lead = contract.get("project_lead", {})
+    vikunja = project_lead.get("vikunja", {})
+    delegation = project_lead.get("delegation", {})
+    services = contract.get("services", {})
+    runtime = contract.get("runtime", {})
+
+    lines = [
+        f"# Hermes Project Brief: {contract['slug']}",
+        "",
+        f"- Contract source: `{source or 'unknown'}`",
+        f"- Identity: `{identity.get('email', '')}` (`{identity.get('idp_account', '')}`)",
+        f"- Display name: {contract_display_name(identity)}",
+        f"- Kind: `{contract.get('kind', '')}`",
+        f"- Primary role: project leader for `{role.get('primary_repo', '')}`",
+        f"- Hindsight bank: `{runtime.get('hindsight_bank', '')}`",
+        "",
+        "## Repository Context",
+        "",
+        f"- Primary repo: `{role.get('primary_repo', '')}`",
+    ]
+    related = list_strings(role.get("related_repos"))
+    if related:
+        lines.extend(f"- Related repo: `{repo}`" for repo in related)
+    orientation = list_strings(role.get("orientation"))
+    if orientation:
+        lines.extend(["", "## Orientation", ""])
+        lines.extend(f"- {item}" for item in orientation)
+
+    lines.extend(
+        [
+            "",
+            "## Project Board",
+            "",
+            f"- Vikunja URL: `{vikunja.get('url', '')}`",
+            f"- Project: `{vikunja.get('project', '')}`",
+            f"- Board: `{vikunja.get('board', '')}`",
+        ]
+    )
+    buckets = list_strings(vikunja.get("buckets"))
+    if buckets:
+        lines.append(f"- Buckets: {', '.join(f'`{bucket}`' for bucket in buckets)}")
+    labels = list_strings(vikunja.get("labels"))
+    if labels:
+        lines.append(f"- Labels: {', '.join(f'`{label}`' for label in labels)}")
+    done_criteria = list_strings(vikunja.get("done_criteria"))
+    if done_criteria:
+        lines.extend(["", "Done means:"])
+        lines.extend(f"- {item}" for item in done_criteria)
+
+    use_subagents = list_strings(delegation.get("use_subagents_for"))
+    if use_subagents:
+        lines.extend(["", "## Delegation", ""])
+        lines.extend(f"- Use sub-agents/sessions for `{item}`." for item in use_subagents)
+    if delegation.get("worker_record_required") is True:
+        lines.append("- Every delegated worker run needs a linked Vikunja worker task or comment trail.")
+
+    lines.extend(["", "## Permission Summary", ""])
+    github = permissions.get("github", {})
+    if isinstance(github, dict):
+        for repo, level in sorted(github.items()):
+            lines.append(f"- GitHub `{repo}`: `{level}`")
+    kubernetes = permissions.get("kubernetes", {})
+    if isinstance(kubernetes, dict):
+        namespaces = list_strings(kubernetes.get("namespaces"))
+        if namespaces:
+            lines.append(f"- Kubernetes namespaces: {', '.join(f'`{namespace}`' for namespace in namespaces)}")
+        if kubernetes.get("service_account"):
+            lines.append(f"- Kubernetes service account: `{kubernetes['service_account']}`")
+    sops_profiles = list_strings(permissions.get("sops_profiles"))
+    if sops_profiles:
+        lines.append(f"- SOPS profiles: {', '.join(f'`{profile}`' for profile in sops_profiles)}")
+    warden_paths = list_strings(permissions.get("warden_paths"))
+    if warden_paths:
+        lines.append(f"- Warden paths: {', '.join(f'`{path}`' for path in warden_paths)}")
+
+    lines.extend(["", "## Service Expectations", ""])
+    for name, state in sorted(services.items()):
+        lines.append(f"- `{name}`: `{state}`")
+
+    lines.extend(
+        [
+            "",
+            "## Operating Rules",
+            "",
+            "- Track substantial development work on Vikunja before starting implementation.",
+            "- Keep Vikunja comments current for pickup, blockers, PRs, CI, deploy, and completion.",
+            "- Use Warden/SOPS references for credentials; never print or store decrypted secret values in task comments, reports, or PRs.",
+            "- Check have-config drift during setup and after policy changes; rematerialize local generated files when stale.",
+        ]
+    )
+
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def dedupe_services(services: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -589,6 +890,8 @@ def write_report(
     env_checked: list[dict[str, Any]],
     env_missing: list[dict[str, Any]],
     services: list[dict[str, Any]],
+    agent_contract: dict[str, Any] | None,
+    agent_contract_source: str | None,
     link_report: list[str],
     dry_run: bool,
 ) -> None:
@@ -643,6 +946,18 @@ def write_report(
         url = service.get("url") or ""
         lines.append(f"- `{service.get('id')}` {url} CLI: {status} (source: {source})")
 
+    lines.extend(["", "## Agent Contract", ""])
+    if agent_contract:
+        identity = agent_contract.get("identity", {})
+        role = agent_contract.get("role", {})
+        runtime = agent_contract.get("runtime", {})
+        lines.append(f"- Contract: `{agent_contract.get('slug')}` from `{agent_contract_source}`")
+        lines.append(f"- Identity: `{identity.get('email')}`")
+        lines.append(f"- Primary repo: `{role.get('primary_repo')}`")
+        lines.append(f"- Hindsight bank: `{runtime.get('hindsight_bank')}`")
+    else:
+        lines.append("- No agent contract selected.")
+
     if link_report:
         lines.extend(["", "## Managed Links", ""])
         lines.extend(link_report)
@@ -658,6 +973,8 @@ def write_lock(
     docs: list[DocSnippet],
     env_checked: list[dict[str, Any]],
     services: list[dict[str, Any]],
+    agent_contract: dict[str, Any] | None,
+    agent_contract_source: str | None,
 ) -> None:
     data = {
         "schema": "https://happyvertical.com/hv-agent-lock/v1",
@@ -686,7 +1003,18 @@ def write_lock(
         ],
         "env": env_checked,
         "services": services,
+        "agent_contract": None,
     }
+    if agent_contract:
+        data["agent_contract"] = {
+            "slug": agent_contract.get("slug"),
+            "kind": agent_contract.get("kind"),
+            "source": agent_contract_source,
+            "sha256": sha256_text(json.dumps(agent_contract, sort_keys=True)),
+            "identity_email": (agent_contract.get("identity") or {}).get("email"),
+            "primary_repo": (agent_contract.get("role") or {}).get("primary_repo"),
+            "hindsight_bank": (agent_contract.get("runtime") or {}).get("hindsight_bank"),
+        }
     for key in sorted(resolved):
         items = resolved[key]
         winner = selected_candidate(items)
@@ -704,6 +1032,8 @@ def write_lock(
 def materialize(
     resolved: dict[str, list[Candidate]],
     doc_outputs: dict[str, str],
+    agent_contract: dict[str, Any] | None,
+    agent_contract_source: str | None,
     output_dir: Path,
     home_dir: Path,
     repo_roots: list[Path],
@@ -712,7 +1042,7 @@ def materialize(
     report: list[str] = []
     if not dry_run:
         output_dir.mkdir(parents=True, exist_ok=True)
-        for child in ["skills", "commands", "scripts"]:
+        for child in ["skills", "commands", "scripts", "contracts"]:
             target = output_dir / child
             if target.exists():
                 shutil.rmtree(target)
@@ -768,6 +1098,28 @@ def materialize(
                 report,
                 allow_unmanaged_dry_run=True,
             )
+    if agent_contract:
+        slug = str(agent_contract["slug"])
+        contract_dest = output_dir / "contracts" / f"{slug}.json"
+        brief_dest = output_dir / "docs" / "hermes" / "project-brief.md"
+        home_contract = home_dir / "agent-contract.json"
+        home_brief = home_dir / "project-brief.md"
+        brief = render_agent_project_brief(agent_contract, agent_contract_source)
+        if dry_run:
+            report.append(f"- would materialize agent contract `{slug}` from `{agent_contract_source}`")
+            report.append(f"- would write Hermes project brief to `{home_brief}`")
+        else:
+            write_json(contract_dest, agent_contract)
+            ensure_parent(brief_dest)
+            brief_dest.write_text(brief, encoding="utf-8")
+        link_target(contract_dest, home_contract, output_dir, repo_roots, dry_run, report)
+        link_target(brief_dest, home_brief, output_dir, repo_roots, dry_run, report)
+    elif not dry_run:
+        for stale_target in [home_dir / "agent-contract.json", home_dir / "project-brief.md"]:
+            if is_managed_target(stale_target, output_dir, repo_roots) and (
+                stale_target.exists() or stale_target.is_symlink()
+            ):
+                stale_target.unlink()
     return report
 
 
@@ -960,6 +1312,13 @@ def main() -> int:
     candidates.extend(local_candidates)
     docs.extend(local_docs)
 
+    agent_contract, agent_contract_source, _, _ = find_agent_contract(
+        active_profiles,
+        have_config,
+        contextforge,
+        local,
+    )
+
     resolved = resolve_candidates(candidates)
     env_checked, env_missing = validate_env(env_requirements)
     doc_outputs = {
@@ -968,11 +1327,34 @@ def main() -> int:
         if any(doc_target_matches(target, snippet.targets) for snippet in docs)
     }
 
-    link_report.extend(materialize(resolved, doc_outputs, output_dir, home_dir, repo_roots, args.dry_run))
+    link_report.extend(
+        materialize(
+            resolved,
+            doc_outputs,
+            agent_contract,
+            agent_contract_source,
+            output_dir,
+            home_dir,
+            repo_roots,
+            args.dry_run,
+        )
+    )
 
     if not args.dry_run:
-        write_lock(lock_path, layers, resolved, docs, env_checked, services)
-    write_report(report_path, layers, resolved, doc_outputs, env_checked, env_missing, services, link_report, args.dry_run)
+        write_lock(lock_path, layers, resolved, docs, env_checked, services, agent_contract, agent_contract_source)
+    write_report(
+        report_path,
+        layers,
+        resolved,
+        doc_outputs,
+        env_checked,
+        env_missing,
+        services,
+        agent_contract,
+        agent_contract_source,
+        link_report,
+        args.dry_run,
+    )
 
     print(f"HappyVertical agent report: {report_path}")
     if not args.dry_run:

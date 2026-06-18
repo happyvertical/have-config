@@ -1,0 +1,101 @@
+{
+  "schema": "https://happyvertical.com/hermes-agent-contract/v1",
+  "slug": "magnateos",
+  "kind": "project-hermes",
+  "identity": {
+    "display_name": "magnateos",
+    "email": "magnateos@happyvertical.com",
+    "idp_account": "magnateos"
+  },
+  "role": {
+    "project_leader": true,
+    "primary_repo": "happyvertical/magnateos",
+    "related_repos": [
+      "happyvertical/iac",
+      "happyvertical/have-config"
+    ],
+    "orientation": [
+      "Start in the primary repo README, AGENTS or CLAUDE instructions, docs/adr, and deploy manifests before changing behavior.",
+      "Treat project maintenance, issue triage, CI, deploy verification, and small product development as the default role.",
+      "Use iac for deployed resources and have-config for shared agent runtime policy."
+    ]
+  },
+  "project_lead": {
+    "vikunja": {
+      "url": "https://todo.happyvertical.com",
+      "project": "Magnateos",
+      "board": "Development",
+      "buckets": [
+        "Inbox",
+        "Ready",
+        "In Progress",
+        "Review",
+        "Blocked",
+        "Done"
+      ],
+      "labels": [
+        "bug",
+        "feature",
+        "ops",
+        "ci",
+        "deploy",
+        "secrets",
+        "blocked"
+      ],
+      "done_criteria": [
+        "The relevant PR is merged or the accepted non-code outcome is documented.",
+        "Required tests or checks have passed or the task explains why they were skipped.",
+        "The deployed surface has been verified when the task affects production or staging.",
+        "Vikunja has final status, PR/deploy links, and any follow-up work."
+      ]
+    },
+    "delegation": {
+      "use_subagents_for": [
+        "large-development",
+        "ci-debugging",
+        "deploy-monitoring",
+        "cross-repo-work",
+        "long-running-investigation"
+      ],
+      "worker_record_required": true
+    }
+  },
+  "permissions": {
+    "github": {
+      "happyvertical/magnateos": "maintain",
+      "happyvertical/iac": "pull-request",
+      "happyvertical/have-config": "read"
+    },
+    "kubernetes": {
+      "service_account": "hermes/hermes-magnateos",
+      "namespaces": [
+        "magnateos-production",
+        "magnateos-staging",
+        "magnateos-dev",
+        "hermes"
+      ],
+      "rbac_profile": "project-maintainer"
+    },
+    "sops_profiles": [
+      "magnateos"
+    ],
+    "warden_paths": [
+      "hermes/magnateos/*"
+    ]
+  },
+  "services": {
+    "idp": "required",
+    "email": "required",
+    "zulip": "required",
+    "vikunja": "required",
+    "warden": "required",
+    "contextforge": "required",
+    "hindsight": "required",
+    "telegram": "pending-human-token"
+  },
+  "runtime": {
+    "hindsight_bank": "magnateos-hermes",
+    "check_setup_required": true,
+    "have_config_drift_policy": "report-and-sync"
+  }
+}

@@ -18,6 +18,7 @@ mkdir -p "$DOTFILES_DIR/agent" "$DOTFILES_DIR/.agents/commands/codex" \
     "$DOTFILES_DIR/.agents/commands/claude" "$DOTFILES_DIR/.agents/skills/ship" \
     "$DOTFILES_DIR/.agents/skills/review-cycle" "$HAVE_CONFIG_DIR/hv" "$HAVE_CONFIG_DIR/profiles/hermes/commands/codex" \
     "$HAVE_CONFIG_DIR/profiles/hermes/skills/check-setup" "$HAVE_CONFIG_DIR/profiles/hermes/skills/hermes-manager" \
+    "$HAVE_CONFIG_DIR/profiles/hermes/contracts" \
     "$HAVE_CONFIG_DIR/reusable-scripts/hermes/no-agent" \
     "$HAVE_CONFIG_DIR/services" "$CONTEXTFORGE_DIR" \
     "$LOCAL_DIR/commands/codex" "$LOCAL_DIR/skills/codex/ship" "$HOME_DIR"
@@ -186,6 +187,91 @@ cat > "$HAVE_CONFIG_DIR/profiles/hermes/skills/hermes-manager/SKILL.md" <<'EOF'
 hermes manager skill
 EOF
 
+cat > "$HAVE_CONFIG_DIR/profiles/hermes/contracts/fixture-project.json" <<'JSON'
+{
+  "schema": "https://happyvertical.com/hermes-agent-contract/v1",
+  "slug": "fixture-project",
+  "kind": "project-hermes",
+  "identity": {
+    "display_name": "Fixture Hermes",
+    "email": "fixture@happyvertical.com",
+    "idp_account": "fixture"
+  },
+  "role": {
+    "project_leader": true,
+    "primary_repo": "happyvertical/fixture",
+    "related_repos": [
+      "happyvertical/iac",
+      "happyvertical/have-config"
+    ],
+    "orientation": [
+      "Read the fixture README before making changes."
+    ]
+  },
+  "project_lead": {
+    "vikunja": {
+      "url": "https://todo.happyvertical.com",
+      "project": "Fixture",
+      "board": "Development",
+      "buckets": [
+        "Inbox",
+        "Ready",
+        "In Progress",
+        "Review",
+        "Blocked",
+        "Done"
+      ],
+      "labels": [
+        "bug",
+        "feature"
+      ],
+      "done_criteria": [
+        "Fixture task is verified."
+      ]
+    },
+    "delegation": {
+      "use_subagents_for": [
+        "large-development",
+        "ci-debugging"
+      ],
+      "worker_record_required": true
+    }
+  },
+  "permissions": {
+    "github": {
+      "happyvertical/fixture": "maintain",
+      "happyvertical/iac": "pull-request",
+      "happyvertical/have-config": "read"
+    },
+    "kubernetes": {
+      "service_account": "hermes/hermes-fixture",
+      "namespaces": [
+        "fixture-production",
+        "hermes"
+      ],
+      "rbac_profile": "project-maintainer"
+    },
+    "sops_profiles": [
+      "fixture"
+    ],
+    "warden_paths": [
+      "hermes/fixture/*"
+    ]
+  },
+  "services": {
+    "email": "required",
+    "zulip": "required",
+    "vikunja": "required",
+    "telegram": "pending-human-token"
+  },
+  "runtime": {
+    "hindsight_bank": "fixture-hermes",
+    "check_setup_required": true,
+    "have_config_drift_policy": "report-and-sync"
+  }
+}
+JSON
+
 cat > "$HAVE_CONFIG_DIR/services/services.json" <<'JSON'
 {
   "schema": "https://happyvertical.com/service-registry/v1",
@@ -247,7 +333,7 @@ cat > "$HOME_DIR/.claude/CLAUDE.md" <<'EOF'
 local claude note
 EOF
 
-HV_AGENT_PROFILE=hermes HERMES_HOME="$HOME_DIR/.hermes" python3 "$ROOT_DIR/scripts/hv-agent-resolver.py" \
+HV_AGENT_PROFILE=hermes HV_AGENT_CONTRACT=fixture-project HERMES_HOME="$HOME_DIR/.hermes" python3 "$ROOT_DIR/scripts/hv-agent-resolver.py" \
     --dotfiles-dir "$DOTFILES_DIR" \
     --have-config-dir "$HAVE_CONFIG_DIR" \
     --contextforge-dir "$CONTEXTFORGE_DIR" \
@@ -264,6 +350,13 @@ grep -q "dotfiles review-cycle skill" "$HOME_DIR/.agents/skills/review-cycle/SKI
 grep -q "hermes check setup" "$HOME_DIR/.codex/commands/check-setup.md"
 grep -q "hermes check setup skill" "$HOME_DIR/.agents/skills/check-setup/SKILL.md"
 grep -q "hermes manager skill" "$HOME_DIR/.agents/skills/hermes-manager/SKILL.md"
+grep -q '"slug": "fixture-project"' "$HOME_DIR/agent-contract.json"
+grep -q "Hermes Project Brief: fixture-project" "$HOME_DIR/project-brief.md"
+grep -q "Primary repo: \`happyvertical/fixture\`" "$HOME_DIR/project-brief.md"
+grep -q '"slug": "fixture-project"' "$OUTPUT_DIR/contracts/fixture-project.json"
+grep -q '"agent_contract": {' "$LOCK_PATH"
+grep -q '"primary_repo": "happyvertical/fixture"' "$LOCK_PATH"
+grep -q 'Contract: `fixture-project`' "$REPORT_PATH"
 grep -q "fixture notify" "$OUTPUT_DIR/scripts/fixture-notify"
 grep -q "fixture notify" "$HOME_DIR/.local/bin/fixture-notify"
 test -x "$HOME_DIR/.local/bin/fixture-notify"

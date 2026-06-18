@@ -20,9 +20,10 @@ server exposed on the local network.
 
 Main project boards should use these buckets:
 
-- `To-Do`
+- `Inbox`
+- `Ready`
 - `Blocked`
-- `Doing`
+- `In Progress`
 - `Review`
 - `Done`
 
@@ -92,7 +93,7 @@ The sidecar performs mechanical coordination only:
 
 - ensures the per-manager project and configured buckets exist
 - provisions missing buckets on watched main kanban boards
-- finds undispatched tasks in the first main bucket, usually `To-Do`
+- finds undispatched tasks in the first ready-for-work bucket, usually `Ready`
 - creates one internal worker task in the manager project
 - creates an isolated git worktree for the worker
 - launches `dev_team.worker_command` or `HV_HERMES_WORKER_COMMAND`
@@ -120,7 +121,7 @@ dev_team:
   worktree_root: ~/.hermes/dev-team/worktrees
   integration_root: ~/.hermes/dev-team/integration
   worker_command: "hv-hermes-dev-team-worker"
-  main_buckets: [To-Do, Blocked, Doing, Review, Done]
+  main_buckets: [Inbox, Ready, In Progress, Review, Blocked, Done]
   manager_buckets: [Queued, Working, Integrating, Blocked, Closed]
   status_updates: on_request
   integration_gate: review_only
