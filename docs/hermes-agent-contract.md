@@ -44,6 +44,14 @@ Project Hermes contracts should declare:
 - GitHub permission level per repo
 - Kubernetes namespaces and service account
 - SOPS profiles and Warden paths
+- optional `service_access` details for services that need provider-specific
+  runtime env names, Warden paths, buckets, or account notes
 - Vikunja project, board, expected buckets, labels, and done criteria
 - when to use sub-agents or long-running sessions
 - Hindsight bank and have-config drift policy
+
+`services` records whether the agent should have a service at all. Use
+`service_access` for the operational contract: provider names, credential
+source, required runtime env keys, optional helper or alias env keys,
+SOPS-backed secret env keys, Warden item paths, and storage buckets. Contracts
+must still contain only references and non-secret names, never token values.

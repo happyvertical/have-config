@@ -583,6 +583,7 @@ def render_agent_project_brief(contract: dict[str, Any], source: str | None) -> 
     vikunja = project_lead.get("vikunja", {})
     delegation = project_lead.get("delegation", {})
     services = contract.get("services", {})
+    service_access = contract.get("service_access", {})
     runtime = contract.get("runtime", {})
 
     lines = [
@@ -657,6 +658,42 @@ def render_agent_project_brief(contract: dict[str, Any], source: str | None) -> 
     lines.extend(["", "## Service Expectations", ""])
     for name, state in sorted(services.items()):
         lines.append(f"- `{name}`: `{state}`")
+
+    if isinstance(service_access, dict) and service_access:
+        lines.extend(["", "## Service Access Details", ""])
+        for name, details in sorted(service_access.items()):
+            if not isinstance(details, dict):
+                continue
+            policy = details.get("policy", services.get(name, "unspecified"))
+            lines.append(f"- `{name}` policy: `{policy}`")
+            providers = list_strings(details.get("providers"))
+            if providers:
+                lines.append(f"  - Providers: {', '.join(f'`{provider}`' for provider in providers)}")
+            account = str(details.get("account", "")).strip()
+            if account:
+                lines.append(f"  - Account: `{account}`")
+            credential_source = str(details.get("credential_source", "")).strip()
+            if credential_source:
+                lines.append(f"  - Credential source: `{credential_source}`")
+            buckets = list_strings(details.get("buckets"))
+            if buckets:
+                lines.append(f"  - Buckets: {', '.join(f'`{bucket}`' for bucket in buckets)}")
+            runtime_env = list_strings(details.get("runtime_env"))
+            if runtime_env:
+                lines.append(f"  - Runtime env: {', '.join(f'`{key}`' for key in runtime_env)}")
+            optional_runtime_env = list_strings(details.get("optional_runtime_env"))
+            if optional_runtime_env:
+                lines.append(
+                    f"  - Optional runtime env: {', '.join(f'`{key}`' for key in optional_runtime_env)}"
+                )
+            secret_env = list_strings(details.get("secret_env"))
+            if secret_env:
+                lines.append(f"  - Secret env: {', '.join(f'`{key}`' for key in secret_env)}")
+            warden_paths = list_strings(details.get("warden_paths"))
+            if warden_paths:
+                lines.append(f"  - Warden paths: {', '.join(f'`{path}`' for path in warden_paths)}")
+            notes = list_strings(details.get("notes"))
+            lines.extend(f"  - {note}" for note in notes)
 
     lines.extend(
         [

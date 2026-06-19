@@ -45,6 +45,29 @@
       }
     },
     {
+      "id": "analytics",
+      "name": "HappyVertical analytics",
+      "purpose": "Project analytics through Matomo and Plausible",
+      "url": "https://matomo.happyvertical.com",
+      "auth": "Per-agent analytics tokens when enabled by contract.",
+      "cli": {
+        "status": "api-token",
+        "notes": "Use MATOMO_AUTH_TOKEN and optional PLAUSIBLE_API_KEY from the agent runtime secret or approved Warden source."
+      }
+    },
+    {
+      "id": "storage",
+      "name": "HappyVertical storage",
+      "purpose": "Scoped object storage access, usually Garage S3",
+      "url": "https://s3.happyvertical.com",
+      "auth": "Per-agent or per-project S3 key, scoped to named buckets.",
+      "cli": {
+        "status": "s3-compatible",
+        "tool": "aws",
+        "notes": "Use AWS_* and Garage endpoint env from runtime Secrets; do not give agents Garage admin credentials."
+      }
+    },
+    {
       "id": "vikunja",
       "name": "Vikunja",
       "purpose": "Project management",
