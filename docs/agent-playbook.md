@@ -12,6 +12,8 @@ commit them to any repo.
 | Email and account identity | HappyVertical email | per account | Use the assigned email account for identity, notifications, and service login recovery. |
 | Passwords and shared secrets | Warden | `https://warden.happyvertical.com` | Retrieve credentials from Warden or approved local secret material; never ask users to paste secrets into prompts. |
 | File sharing | OxiCloud | `https://drive.happyvertical.com` | Use OxiCloud for shared files and WebDAV access through `rclone` when configured. |
+| Analytics | Matomo/Plausible | service URLs from contract | Use analytics API tokens only when the contract enables them. |
+| Object storage | Garage/S3 | service endpoint from contract | Use bucket-scoped S3 keys; never request Garage admin credentials for normal project work. |
 | Project management | Vikunja | `https://todo.happyvertical.com` | Use Vikunja for project and task state. Treat issue trackers in repos as project-specific unless the repo says otherwise. |
 | Chat and collaboration | Zulip | `https://chat.happyvertical.com` | Use Zulip as the primary team chat and agent-response channel. Hermes agents should enable `platforms.zulip.enabled: true`, connect with per-agent Zulip account API credentials, and long-poll `/api/v1/events`. |
 | Legacy chat | Stoat | `https://stoat.happyvertical.com` | Treat Stoat as legacy/superseded unless a task explicitly asks for it. |
@@ -32,6 +34,10 @@ The command should verify:
 - `todo.happyvertical.com` is reachable and the agent can access Vikunja
 - `warden.happyvertical.com` is reachable and credentials can be retrieved
 - `drive.happyvertical.com` is reachable and WebDAV/OxiCloud access is configured
+- analytics and storage credentials are present only when required by the
+  selected Hermes contract
+- Bifrost fallback credentials are present and the configured gateway endpoint
+  is reachable when the selected Hermes contract requires Bifrost
 - `context.happyvertical.com` is reachable and the agent is configured for
   prompts, resources, and memory
 - selected Hermes agent contract, project brief, repo permissions, SOPS profile,

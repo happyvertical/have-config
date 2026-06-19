@@ -12,6 +12,8 @@ per user or per agent and must stay out of git.
 | HappyVertical IDP | `https://idp.happyvertical.com` | Identity provider and SSO | Verify through browser/session or available connector |
 | Warden | `https://warden.happyvertical.com` | Password and shared secret access | Credential source; never print secret values |
 | OxiCloud | `https://drive.happyvertical.com` | File sharing | Use WebDAV-capable tooling such as `rclone` |
+| Analytics | `https://matomo.happyvertical.com` / Plausible | Project analytics | Use per-agent API tokens only when enabled by contract |
+| Storage | Garage/S3 | Scoped object storage | Use bucket-scoped S3 keys; never give agents Garage admin credentials |
 | Vikunja | `https://todo.happyvertical.com` | Project management | Use `hv-services vikunja` or the HappyVertical API wrapper with `HV_VIKUNJA_TOKEN`; the official CLI is server/container admin focused |
 | Zulip | `https://chat.happyvertical.com` | Primary team chat and agent-response channel | Hermes gateway long-poll adapter with per-agent Zulip account API credentials; use `/api/v1/typing` while processing |
 | Stoat | `https://stoat.happyvertical.com` | Legacy chat and collaboration | Superseded by Zulip unless explicitly requested |
@@ -27,6 +29,13 @@ per user or per agent and must stay out of git.
 - Project Hermes identity, repo scope, permissions, Vikunja board, SOPS profile,
   and runtime expectations should be declared in a non-secret Hermes agent
   contract.
+- Optional service credentials such as OxiCloud WebDAV, analytics API tokens,
+  and Garage/S3 keys should be declared in contract `service_access`, stored as
+  Warden/SOPS references, and scoped to the named project or bucket.
+- Put only mandatory runtime names in `service_access.<service>.runtime_env`.
+  Put aliases or convenience names such as alternate AWS region/profile/env
+  variables in `optional_runtime_env` so setup checks do not block valid
+  configurations.
 - Installers may hard-fail missing environment variables only for capabilities
   explicitly enabled with `HV_ENABLED_CAPABILITIES`.
 

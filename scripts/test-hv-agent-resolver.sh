@@ -260,9 +260,36 @@ cat > "$HAVE_CONFIG_DIR/profiles/hermes/contracts/fixture-project.json" <<'JSON'
   },
   "services": {
     "email": "required",
+    "storage": "required",
     "zulip": "required",
     "vikunja": "required",
     "telegram": "pending-human-token"
+  },
+  "service_access": {
+    "storage": {
+      "policy": "required",
+      "providers": [
+        "garage-s3"
+      ],
+      "credential_source": "sops",
+      "runtime_env": [
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY"
+      ],
+      "optional_runtime_env": [
+        "AWS_PROFILE"
+      ],
+      "secret_env": [
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY"
+      ],
+      "warden_paths": [
+        "hermes/fixture/storage"
+      ],
+      "buckets": [
+        "hermes-fixture"
+      ]
+    }
   },
   "runtime": {
     "hindsight_bank": "fixture-hermes",
@@ -353,6 +380,10 @@ grep -q "hermes manager skill" "$HOME_DIR/.agents/skills/hermes-manager/SKILL.md
 grep -q '"slug": "fixture-project"' "$HOME_DIR/agent-contract.json"
 grep -q "Hermes Project Brief: fixture-project" "$HOME_DIR/project-brief.md"
 grep -q "Primary repo: \`happyvertical/fixture\`" "$HOME_DIR/project-brief.md"
+grep -q "Service Access Details" "$HOME_DIR/project-brief.md"
+grep -q "Buckets: \`hermes-fixture\`" "$HOME_DIR/project-brief.md"
+grep -q "Runtime env: \`AWS_ACCESS_KEY_ID\`, \`AWS_SECRET_ACCESS_KEY\`" "$HOME_DIR/project-brief.md"
+grep -q "Optional runtime env: \`AWS_PROFILE\`" "$HOME_DIR/project-brief.md"
 grep -q '"slug": "fixture-project"' "$OUTPUT_DIR/contracts/fixture-project.json"
 grep -q '"agent_contract": {' "$LOCK_PATH"
 grep -q '"primary_repo": "happyvertical/fixture"' "$LOCK_PATH"

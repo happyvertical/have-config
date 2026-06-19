@@ -43,7 +43,27 @@ Run these checks:
    - Confirm `https://drive.happyvertical.com` is reachable.
    - If `rclone` and an OxiCloud/WebDAV remote are configured, run a read-only
      listing or config check.
-6. Context Forge memory and prompts
+6. Bifrost gateway
+   - If the selected contract marks `bifrost` as required, confirm the expected
+     Bifrost env names from `service_access.bifrost.runtime_env` are present
+     without printing values.
+   - Confirm `https://bifrost.happyvertical.com` or the configured
+     `HERMES_BIFROST_BASE_URL` is reachable, then make a harmless health,
+     model-list, or equivalent read-only request when an API key is configured.
+   - Mark missing Bifrost credentials as `Blocked` with the missing variable
+     names, not their values.
+7. Analytics and object storage
+   - If the selected contract marks `analytics` as required, confirm the
+     expected analytics env names from `service_access.analytics` are present
+     without printing values, then make a read-only Matomo/Plausible request
+     when a token is configured.
+   - If the selected contract marks `storage` as required, confirm the expected
+     S3/Garage env names and bucket names from `service_access.storage`.
+     Treat `optional_runtime_env` names as helpers or aliases, not blockers.
+     Run a read-only bucket/list check only when scoped credentials are present.
+   - Mark missing analytics or storage credentials as `Blocked` with the missing
+     variable names, not their values.
+8. Context Forge memory and prompts
    - Confirm `https://context.happyvertical.com` is reachable.
    - Verify the agent is configured to use Context Forge for prompts,
      resources, and memory. If Hindsight or Context Forge MCP tools are
@@ -51,7 +71,7 @@ Run these checks:
      HappyVertical memory bank.
    - Verify `HV_CONTEXTFORGE_SNAPSHOT_DIR` exists when Context Forge snapshots
      are expected for install-time materialization.
-7. Zulip chat gateway
+9. Zulip chat gateway
    - Confirm `https://chat.happyvertical.com` is reachable.
    - Confirm `hermes config path` resolves to a local config file and that it
      has `platforms.zulip.enabled: true` when Zulip chat response is expected.
@@ -66,7 +86,7 @@ Run these checks:
      succeeds for the configured account and that the `/api/v1/register` + `/api/v1/events`
      long-poll listener can start without auth errors.
    - Report missing Zulip account API credentials as `Blocked` with the variable names.
-8. Hermes Dev Team Mode
+10. Hermes Dev Team Mode
    - If Dev Team Mode is expected, confirm the local Hermes config has
      `dev_team.enabled: true`; otherwise mark it `Skipped`.
    - Confirm the manager identity resolves from `dev_team.manager_identity`,
@@ -90,7 +110,7 @@ Run these checks:
      local task explicitly requires otherwise.
    - If a dev server URL is configured for the active project or task, verify it
      is reachable from the local network.
-9. Agent contract and permissions
+11. Agent contract and permissions
    - Confirm `agent-contract.json`, `project-brief.md`, and `agent-lock.json`
      exist when `HV_AGENT_CONTRACT` is set.
    - Confirm the lockfile records the selected contract slug, identity, primary
@@ -104,7 +124,7 @@ Run these checks:
      the user explicitly requests a safe secret operation.
    - Confirm have-config freshness by comparing the installed source revision
      in `agent-lock.json` with the local `have-config` checkout when available.
-10. Project leader operating mode
+12. Project leader operating mode
    - Confirm substantial development work is represented on Vikunja before
      implementation starts.
    - Confirm the task uses the contract buckets: `Inbox`, `Ready`,

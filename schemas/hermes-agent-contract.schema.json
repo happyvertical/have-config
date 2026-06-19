@@ -125,7 +125,49 @@
     "services": {
       "type": "object",
       "additionalProperties": {
-        "enum": ["required", "optional", "pending-human-token", "disabled"]
+        "enum": ["required", "optional", "pending-human-token", "disabled", "forbidden", "admin-only"]
+      }
+    },
+    "service_access": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "policy": {
+            "enum": ["required", "optional", "pending-human-token", "disabled", "forbidden", "admin-only"]
+          },
+          "account": { "type": "string" },
+          "providers": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "credential_source": { "type": "string" },
+          "runtime_env": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "optional_runtime_env": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "secret_env": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "warden_paths": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "buckets": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "notes": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "additionalProperties": false
       }
     },
     "runtime": {

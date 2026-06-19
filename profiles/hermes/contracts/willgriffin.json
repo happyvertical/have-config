@@ -1,29 +1,29 @@
 {
   "schema": "https://happyvertical.com/hermes-agent-contract/v1",
-  "slug": "magnateos",
+  "slug": "willgriffin",
   "kind": "project-hermes",
   "identity": {
-    "display_name": "magnateos",
-    "email": "magnateos@happyvertical.com",
-    "idp_account": "magnateos"
+    "display_name": "willgriffin",
+    "email": "willgriffin@happyvertical.com",
+    "idp_account": "willgriffin"
   },
   "role": {
     "project_leader": true,
-    "primary_repo": "happyvertical/magnateos",
+    "primary_repo": "willgriffin/willgriffin.dev",
     "related_repos": [
       "happyvertical/iac",
       "happyvertical/have-config"
     ],
     "orientation": [
-      "Start in the primary repo README, AGENTS or CLAUDE instructions, docs/adr, and deploy manifests before changing behavior.",
-      "Treat project maintenance, issue triage, CI, deploy verification, and small product development as the default role.",
+      "Start with the site repository README, deployment manifests, and current production state before changing behavior.",
+      "Treat site maintenance, CI, deploy verification, analytics review, and storage-backed asset workflows as the default role.",
       "Use iac for deployed resources and have-config for shared agent runtime policy."
     ]
   },
   "project_lead": {
     "vikunja": {
       "url": "https://todo.happyvertical.com",
-      "project": "Magnateos",
+      "project": "Willgriffin",
       "board": "Development",
       "buckets": [
         "Inbox",
@@ -40,12 +40,14 @@
         "ci",
         "deploy",
         "secrets",
+        "analytics",
+        "storage",
         "blocked"
       ],
       "done_criteria": [
         "The relevant PR is merged or the accepted non-code outcome is documented.",
         "Required tests or checks have passed or the task explains why they were skipped.",
-        "The deployed surface has been verified when the task affects production or staging.",
+        "The deployed surface has been verified when the task affects production.",
         "Vikunja has final status, PR/deploy links, and any follow-up work."
       ]
     },
@@ -62,25 +64,23 @@
   },
   "permissions": {
     "github": {
-      "happyvertical/magnateos": "maintain",
+      "willgriffin/willgriffin.dev": "maintain",
       "happyvertical/iac": "pull-request",
       "happyvertical/have-config": "read"
     },
     "kubernetes": {
-      "service_account": "hermes/hermes-magnateos",
+      "service_account": "hermes/hermes-willgriffin",
       "namespaces": [
-        "magnateos-production",
-        "magnateos-staging",
-        "magnateos-dev",
+        "willgriffin",
         "hermes"
       ],
       "rbac_profile": "project-maintainer"
     },
     "sops_profiles": [
-      "magnateos"
+      "willgriffin"
     ],
     "warden_paths": [
-      "hermes/magnateos/*"
+      "hermes/willgriffin/*"
     ]
   },
   "services": {
@@ -95,7 +95,7 @@
     "oxicloud": "required",
     "analytics": "required",
     "storage": "required",
-    "telegram": "pending-human-token"
+    "telegram": "disabled"
   },
   "service_access": {
     "bifrost": {
@@ -109,7 +109,7 @@
         "HERMES_BIFROST_API_KEY"
       ],
       "notes": [
-        "Fallback model access uses hermes_magnateos_virtual_key from the hermes-bifrost-keys Secret."
+        "Fallback model access uses hermes_willgriffin_virtual_key from the hermes-bifrost-keys Secret."
       ]
     },
     "oxicloud": {
@@ -123,7 +123,7 @@
         "OXICLOUD_URL"
       ],
       "warden_paths": [
-        "hermes/magnateos/oxicloud"
+        "hermes/willgriffin/oxicloud"
       ],
       "notes": [
         "OxiCloud login is IDP-backed. Add a WebDAV or app-token provider hook before requiring rclone credentials in runtime."
@@ -145,7 +145,7 @@
         "MATOMO_AUTH_TOKEN"
       ],
       "warden_paths": [
-        "hermes/magnateos/analytics"
+        "hermes/willgriffin/analytics"
       ]
     },
     "storage": {
@@ -170,15 +170,15 @@
         "AWS_SECRET_ACCESS_KEY"
       ],
       "warden_paths": [
-        "hermes/magnateos/storage"
+        "hermes/willgriffin/storage"
       ],
       "buckets": [
-        "hermes-magnateos"
+        "hermes-willgriffin"
       ]
     }
   },
   "runtime": {
-    "hindsight_bank": "magnateos-hermes",
+    "hindsight_bank": "willgriffin-hermes",
     "check_setup_required": true,
     "have_config_drift_policy": "report-and-sync"
   }
