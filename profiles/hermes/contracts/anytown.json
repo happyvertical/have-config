@@ -1,0 +1,108 @@
+{
+  "schema": "https://happyvertical.com/hermes-agent-contract/v1",
+  "slug": "anytown",
+  "kind": "project-hermes",
+  "identity": {
+    "display_name": "anytown",
+    "email": "anytown@happyvertical.com",
+    "idp_account": "anytown"
+  },
+  "role": {
+    "project_leader": true,
+    "primary_repo": "anytown/anytown.ai",
+    "related_repos": [
+      "happyvertical/iac",
+      "happyvertical/have-config",
+      "happyvertical/sdk",
+      "happyvertical/smrt",
+      "happyvertical/ergot.io"
+    ],
+    "orientation": [
+      "Start in the primary repo README, AGENTS or CLAUDE instructions, docs/adr, and deployment manifests before changing behavior.",
+      "Treat product maintenance, issue triage, CI, deploy verification, and small product development as the default role.",
+      "Use iac for deployed resources and have-config for shared agent runtime policy.",
+      "Use the related repos to understand shared SDK, SMRT, Ergot, and infrastructure dependencies that Anytown relies on."
+    ]
+  },
+  "project_lead": {
+    "vikunja": {
+      "url": "https://todo.happyvertical.com",
+      "project": "Anytown",
+      "board": "Development",
+      "buckets": [
+        "Inbox",
+        "Ready",
+        "In Progress",
+        "Review",
+        "Blocked",
+        "Done"
+      ],
+      "labels": [
+        "bug",
+        "feature",
+        "ops",
+        "ci",
+        "deploy",
+        "secrets",
+        "blocked"
+      ],
+      "done_criteria": [
+        "The relevant PR is merged or the accepted non-code outcome is documented.",
+        "Required tests or checks have passed or the task explains why they were skipped.",
+        "The deployed surface has been verified when the task affects production or staging.",
+        "Vikunja has final status, PR/deploy links, and any follow-up work."
+      ]
+    },
+    "delegation": {
+      "use_subagents_for": [
+        "large-development",
+        "ci-debugging",
+        "deploy-monitoring",
+        "cross-repo-work",
+        "long-running-investigation"
+      ],
+      "worker_record_required": true
+    }
+  },
+  "permissions": {
+    "github": {
+      "anytown/anytown.ai": "maintain",
+      "happyvertical/iac": "pull-request",
+      "happyvertical/have-config": "read",
+      "happyvertical/sdk": "read",
+      "happyvertical/smrt": "read",
+      "happyvertical/ergot.io": "read"
+    },
+    "kubernetes": {
+      "service_account": "hermes/hermes-anytown",
+      "namespaces": [
+        "anytown",
+        "anytown-staging",
+        "anytown-dev",
+        "hermes"
+      ],
+      "rbac_profile": "project-maintainer"
+    },
+    "sops_profiles": [
+      "anytown"
+    ],
+    "warden_paths": [
+      "hermes/anytown/*"
+    ]
+  },
+  "services": {
+    "idp": "required",
+    "email": "required",
+    "zulip": "required",
+    "vikunja": "required",
+    "warden": "required",
+    "contextforge": "required",
+    "hindsight": "required",
+    "telegram": "configured"
+  },
+  "runtime": {
+    "hindsight_bank": "anytown-hermes",
+    "check_setup_required": true,
+    "have_config_drift_policy": "report-and-sync"
+  }
+}
