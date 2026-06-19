@@ -98,7 +98,7 @@
     "warden": "required",
     "contextforge": "required",
     "hindsight": "required",
-    "telegram": "configured"
+    "telegram": "pending-human-token"
   },
   "runtime": {
     "hindsight_bank": "anytown-hermes",
