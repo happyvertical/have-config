@@ -1,0 +1,193 @@
+{
+  "schema": "https://happyvertical.com/hermes-agent-contract/v1",
+  "slug": "happyvertical",
+  "kind": "ops-hermes",
+  "identity": {
+    "display_name": "happyvertical",
+    "email": "happyvertical@happyvertical.com",
+    "idp_account": "happyvertical"
+  },
+  "role": {
+    "project_leader": true,
+    "primary_repo": "happyvertical/iac",
+    "related_repos": [
+      "happyvertical/have-config",
+      "happyvertical/ergot.io",
+      "anytown/anytown.ai",
+      "happyvertical/magnateos",
+      "willgriffin/willgriffin.dev"
+    ],
+    "orientation": [
+      "Start in iac, have-config, cluster status, and current Flux state before changing operational behavior.",
+      "Treat infrastructure maintenance, rollout verification, service integration, secrets policy, and Hermes fleet health as the default role.",
+      "Use iac for deployed resources and have-config for shared agent runtime policy.",
+      "Use the related repos to understand project-specific workloads and agent responsibilities."
+    ]
+  },
+  "project_lead": {
+    "vikunja": {
+      "url": "https://todo.happyvertical.com",
+      "project": "HappyVertical",
+      "board": "Operations",
+      "buckets": [
+        "Inbox",
+        "Ready",
+        "In Progress",
+        "Review",
+        "Blocked",
+        "Done"
+      ],
+      "labels": [
+        "ops",
+        "ci",
+        "deploy",
+        "secrets",
+        "identity",
+        "warden",
+        "storage",
+        "blocked"
+      ],
+      "done_criteria": [
+        "The relevant PR is merged or the accepted non-code outcome is documented.",
+        "Required checks have passed or the task explains why they were skipped.",
+        "Flux, Kubernetes, and affected services have been verified when the task affects deployed infrastructure.",
+        "Vikunja has final status, PR/deploy links, and any follow-up work."
+      ]
+    },
+    "delegation": {
+      "use_subagents_for": [
+        "large-development",
+        "ci-debugging",
+        "deploy-monitoring",
+        "cross-repo-work",
+        "long-running-investigation"
+      ],
+      "worker_record_required": true
+    }
+  },
+  "permissions": {
+    "github": {
+      "happyvertical/iac": "maintain",
+      "happyvertical/have-config": "maintain",
+      "happyvertical/ergot.io": "read",
+      "anytown/anytown.ai": "read",
+      "happyvertical/magnateos": "read",
+      "willgriffin/willgriffin.dev": "read"
+    },
+    "kubernetes": {
+      "service_account": "hermes/hermes-happyvertical",
+      "namespaces": [
+        "happyvertical",
+        "hermes",
+        "flux-system"
+      ],
+      "rbac_profile": "cluster-operator"
+    },
+    "sops_profiles": [
+      "happyvertical",
+      "hermes"
+    ],
+    "warden_paths": [
+      "hermes/happyvertical/*"
+    ]
+  },
+  "services": {
+    "idp": "required",
+    "email": "required",
+    "zulip": "required",
+    "vikunja": "required",
+    "warden": "required",
+    "contextforge": "required",
+    "hindsight": "required",
+    "bifrost": "required",
+    "oxicloud": "required",
+    "analytics": "required",
+    "storage": "required",
+    "telegram": "disabled"
+  },
+  "service_access": {
+    "bifrost": {
+      "policy": "required",
+      "providers": [
+        "bifrost"
+      ],
+      "credential_source": "sops",
+      "runtime_env": [
+        "HERMES_BIFROST_BASE_URL",
+        "HERMES_BIFROST_API_KEY"
+      ],
+      "notes": [
+        "Fallback model access uses hermes_happyvertical_virtual_key from the hermes-bifrost-keys Secret."
+      ]
+    },
+    "oxicloud": {
+      "policy": "required",
+      "account": "kanidm-sso",
+      "providers": [
+        "oxicloud"
+      ],
+      "credential_source": "warden-or-sops",
+      "runtime_env": [
+        "OXICLOUD_URL"
+      ],
+      "warden_paths": [
+        "hermes/happyvertical/oxicloud"
+      ],
+      "notes": [
+        "OxiCloud login is IDP-backed. Add a WebDAV or app-token provider hook before requiring rclone credentials in runtime."
+      ]
+    },
+    "analytics": {
+      "policy": "required",
+      "providers": [
+        "matomo",
+        "plausible"
+      ],
+      "credential_source": "sops",
+      "runtime_env": [
+        "MATOMO_URL",
+        "MATOMO_AUTH_TOKEN",
+        "PLAUSIBLE_URL"
+      ],
+      "secret_env": [
+        "MATOMO_AUTH_TOKEN"
+      ],
+      "warden_paths": [
+        "hermes/happyvertical/analytics"
+      ]
+    },
+    "storage": {
+      "policy": "required",
+      "providers": [
+        "garage-s3"
+      ],
+      "credential_source": "sops",
+      "runtime_env": [
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_DEFAULT_REGION",
+        "AWS_ENDPOINT_URL_S3"
+      ],
+      "optional_runtime_env": [
+        "AWS_REGION",
+        "AWS_PROFILE",
+        "GARAGE_S3_ENDPOINT"
+      ],
+      "secret_env": [
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY"
+      ],
+      "warden_paths": [
+        "hermes/happyvertical/storage"
+      ],
+      "buckets": [
+        "hermes-happyvertical"
+      ]
+    }
+  },
+  "runtime": {
+    "hindsight_bank": "happyvertical-hermes",
+    "check_setup_required": true,
+    "have_config_drift_policy": "report-and-sync"
+  }
+}
