@@ -1,0 +1,195 @@
+{
+  "schema": "https://happyvertical.com/hermes-agent-contract/v1",
+  "slug": "smrt",
+  "kind": "project-hermes",
+  "identity": {
+    "display_name": "smrt",
+    "email": "smrt@happyvertical.com",
+    "idp_account": "smrt"
+  },
+  "role": {
+    "project_leader": true,
+    "primary_repo": "happyvertical/smrt",
+    "related_repos": [
+      "happyvertical/iac",
+      "happyvertical/have-config",
+      "happyvertical/sdk",
+      "happyvertical/ergot.io",
+      "anytown/anytown.ai"
+    ],
+    "orientation": [
+      "Start in the primary repo README, AGENTS or CLAUDE instructions, package docs, and deployment context before changing behavior.",
+      "Treat SMRT framework maintenance, package health, CI, release discipline, downstream compatibility, and small product development as the default role.",
+      "Use iac for deployed resources and have-config for shared agent runtime policy.",
+      "Use the related repos to understand shared SDK, Ergot, Anytown, and infrastructure dependencies that SMRT supports."
+    ]
+  },
+  "project_lead": {
+    "vikunja": {
+      "url": "https://todo.happyvertical.com",
+      "project": "SMRT",
+      "board": "Development",
+      "buckets": [
+        "Inbox",
+        "Ready",
+        "In Progress",
+        "Review",
+        "Blocked",
+        "Done"
+      ],
+      "labels": [
+        "bug",
+        "feature",
+        "ops",
+        "ci",
+        "release",
+        "docs",
+        "secrets",
+        "analytics",
+        "storage",
+        "blocked"
+      ],
+      "done_criteria": [
+        "The relevant PR is merged or the accepted non-code outcome is documented.",
+        "Required tests, typechecks, lint, or package checks have passed or the task explains why they were skipped.",
+        "Downstream compatibility or release impact has been considered when framework behavior changes.",
+        "Vikunja has final status, PR/deploy links, and any follow-up work."
+      ]
+    },
+    "delegation": {
+      "use_subagents_for": [
+        "large-development",
+        "ci-debugging",
+        "release-debugging",
+        "cross-package-work",
+        "cross-repo-work",
+        "long-running-investigation"
+      ],
+      "worker_record_required": true
+    }
+  },
+  "permissions": {
+    "github": {
+      "happyvertical/smrt": "maintain",
+      "happyvertical/iac": "pull-request",
+      "happyvertical/have-config": "read",
+      "happyvertical/sdk": "read",
+      "happyvertical/ergot.io": "read",
+      "anytown/anytown.ai": "read"
+    },
+    "kubernetes": {
+      "service_account": "hermes/hermes-smrt",
+      "namespaces": [
+        "projects",
+        "happyvertical",
+        "hermes"
+      ],
+      "rbac_profile": "project-maintainer"
+    },
+    "sops_profiles": [
+      "smrt"
+    ],
+    "warden_paths": [
+      "hermes/smrt/*"
+    ]
+  },
+  "services": {
+    "idp": "required",
+    "email": "required",
+    "zulip": "required",
+    "vikunja": "required",
+    "warden": "required",
+    "contextforge": "required",
+    "hindsight": "required",
+    "bifrost": "required",
+    "oxicloud": "required",
+    "analytics": "required",
+    "storage": "required",
+    "telegram": "pending-human-token"
+  },
+  "service_access": {
+    "bifrost": {
+      "policy": "required",
+      "providers": [
+        "bifrost"
+      ],
+      "credential_source": "sops",
+      "runtime_env": [
+        "HERMES_BIFROST_BASE_URL",
+        "HERMES_BIFROST_API_KEY"
+      ],
+      "notes": [
+        "Fallback model access uses hermes_smrt_virtual_key from the hermes-bifrost-keys Secret."
+      ]
+    },
+    "oxicloud": {
+      "policy": "required",
+      "account": "kanidm-sso",
+      "providers": [
+        "oxicloud"
+      ],
+      "credential_source": "warden-or-sops",
+      "runtime_env": [
+        "OXICLOUD_URL"
+      ],
+      "warden_paths": [
+        "hermes/smrt/oxicloud"
+      ],
+      "notes": [
+        "OxiCloud login is IDP-backed. Add a WebDAV or app-token provider hook before requiring rclone credentials in runtime."
+      ]
+    },
+    "analytics": {
+      "policy": "required",
+      "providers": [
+        "matomo",
+        "plausible"
+      ],
+      "credential_source": "sops",
+      "runtime_env": [
+        "MATOMO_URL",
+        "MATOMO_AUTH_TOKEN",
+        "PLAUSIBLE_URL"
+      ],
+      "secret_env": [
+        "MATOMO_AUTH_TOKEN"
+      ],
+      "warden_paths": [
+        "hermes/smrt/analytics"
+      ]
+    },
+    "storage": {
+      "policy": "required",
+      "providers": [
+        "garage-s3"
+      ],
+      "credential_source": "sops",
+      "runtime_env": [
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_DEFAULT_REGION",
+        "AWS_ENDPOINT_URL_S3"
+      ],
+      "optional_runtime_env": [
+        "AWS_REGION",
+        "AWS_PROFILE",
+        "GARAGE_S3_ENDPOINT"
+      ],
+      "secret_env": [
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY"
+      ],
+      "warden_paths": [
+        "hermes/smrt/storage"
+      ],
+      "buckets": [
+        "hermes-smrt"
+      ]
+    }
+  },
+  "runtime": {
+    "hindsight_bank": "smrt-hermes",
+    "check_setup_required": true,
+    "have_config_drift_policy": "report-and-sync"
+  }
+}
