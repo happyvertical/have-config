@@ -14,7 +14,7 @@
       "happyvertical/have-config",
       "happyvertical/ergot.io",
       "anytown/anytown.ai",
-      "happyvertical/magnateos",
+      "happyvertical/magnateos.com",
       "willgriffin/willgriffin.dev"
     ],
     "orientation": [
@@ -71,7 +71,7 @@
       "happyvertical/have-config": "maintain",
       "happyvertical/ergot.io": "read",
       "anytown/anytown.ai": "read",
-      "happyvertical/magnateos": "read",
+      "happyvertical/magnateos.com": "read",
       "willgriffin/willgriffin.dev": "read"
     },
     "kubernetes": {

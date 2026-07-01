@@ -9,7 +9,7 @@
   },
   "role": {
     "project_leader": true,
-    "primary_repo": "happyvertical/magnateos",
+    "primary_repo": "happyvertical/magnateos.com",
     "related_repos": [
       "happyvertical/iac",
       "happyvertical/have-config"
@@ -62,7 +62,7 @@
   },
   "permissions": {
     "github": {
-      "happyvertical/magnateos": "maintain",
+      "happyvertical/magnateos.com": "maintain",
       "happyvertical/iac": "pull-request",
       "happyvertical/have-config": "read"
     },
