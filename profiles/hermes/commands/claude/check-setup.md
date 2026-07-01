@@ -129,6 +129,22 @@ Run these checks:
      a project-specific exception.
    - Confirm long-running, cross-repo, CI, deploy, or large development work
      uses sub-agents/sessions and records worker state on the main task.
+13. GitHub project board (board #7)
+   - If the selected contract sets `board.enabled: true`, run these checks;
+     otherwise mark them `Skipped`.
+   - Confirm `gh auth status` shows the token carries both `read:project` and
+     `project` scopes. Report missing scopes as `Blocked` with the scope names,
+     never the token value.
+   - Confirm board #7 is reachable with a read-only resolve query
+     (`gh api graphql` for
+     `organization(login:"happyvertical").projectV2(number:7)`); confirm the
+     `Status` field and its lanes resolve.
+   - Confirm the agent's board label (`board.label`, defaulting to the contract
+     slug) exists in the repositories the contract can act on, so triaged cards
+     can route to this agent. Report a missing label as `Blocked` naming the
+     label and repo, not as an error.
+   - Do not move cards or post comments during check-setup; this check is
+     read-only.
 
 If a check cannot be performed noninteractively, mark it `Blocked` and state
 the missing credential, connector, environment variable, CLI, or local config.

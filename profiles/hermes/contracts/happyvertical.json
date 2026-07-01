@@ -65,6 +65,11 @@
       "worker_record_required": true
     }
   },
+  "board": {
+    "enabled": true,
+    "project": "happyvertical/7",
+    "label": "happyvertical"
+  },
   "permissions": {
     "github": {
       "happyvertical/iac": "maintain",

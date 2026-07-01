@@ -46,6 +46,12 @@
       "name": "hermes-manager",
       "path": "skills/hermes-manager",
       "description": "Operate Hermes Dev Team Mode as a manager for local worker agents"
+    },
+    {
+      "agent": "codex",
+      "name": "hermes-board",
+      "path": "skills/hermes-board",
+      "description": "Work GitHub Projects board #7: pick up slug-labelled Ready cards and drive them through the lanes"
     }
   ],
   "env_requirements": [
@@ -85,6 +91,14 @@
       ],
       "default_enabled": false,
       "description": "Worker command template used by Hermes Dev Team Mode."
+    },
+    {
+      "capability": "github-project-board",
+      "vars": [
+        "HV_AGENT_CONTRACT"
+      ],
+      "default_enabled": false,
+      "description": "GitHub Projects board #7 access for the hermes-board procedure. Authenticate gh with a token carrying read:project and project scope (GH_TOKEN or GITHUB_TOKEN, or gh's stored auth); check-setup verifies the scope rather than a fixed token env var name."
     }
   ],
   "services": []

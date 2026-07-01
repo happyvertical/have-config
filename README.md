@@ -158,6 +158,8 @@ Hermes agents additionally get local generated commands/skills:
   recovery, and watcher setup
 - `hermes-manager` — documents Dev Team Mode manager behavior for local worker
   dispatch, board state, and live integration
+- `hermes-board` — documents working the org GitHub Projects board #7: pick up
+  slug-labeled `Ready` cards and drive them through the lanes
 
 The base manifest also installs reusable no-agent scripts when executable
 script links are managed:
@@ -213,6 +215,14 @@ canonical user-visible issue state, and uses a per-manager internal Vikunja
 project for worker execution. `hv-hermes-dev-team-manager` provides the
 mechanical sidecar loop for provisioning boards, dispatching workers, and
 tracking worker exits; manager review and integration remain agent work.
+
+The Hermes GitHub project board SOP is documented in
+`docs/hermes-github-project-board.md`. It defines how each Hermes agent works the
+org GitHub Projects board #7 ("Development Workflow"): on each hermes-managed
+cycle it picks up cards in the `Ready` lane labeled with its own slug and drives
+them through `In Progress`, `Review`, and `Done`, commenting as it works. The
+`hermes-board` skill is the executable form; scheduling is owned by the Hermes
+runtime.
 
 ## Agent resolution model
 

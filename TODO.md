@@ -87,6 +87,8 @@ Pick when the first consumer pair exists, not before.
       blocked-task recovery, and watcher setup
 - [x] Hermes `hermes-manager` skill — Dev Team Mode manager behavior for
       local worker dispatch, board state, and live integration
+- [x] Hermes `hermes-board` skill — GitHub Projects board #7 pickup and
+      lane-lifecycle procedure (`docs/hermes-github-project-board.md`)
 - [x] `hv-hermes-dev-team-manager` — Dev Team Mode sidecar for Vikunja board
       provisioning, worker dispatch, and worker process status
 - [ ] Publish an exporter from Context Forge into the manifest shape expected by

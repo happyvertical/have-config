@@ -89,6 +89,34 @@
       },
       "additionalProperties": false
     },
+    "board": {
+      "type": "object",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "project": { "type": "string" },
+        "label": { "type": "string" },
+        "actionable_lanes": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "lane_flow": {
+          "type": "object",
+          "properties": {
+            "claim": { "type": "string" },
+            "review": { "type": "string" },
+            "done": { "type": "string" },
+            "blocked_label": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "done_criteria": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
     "permissions": {
       "type": "object",
       "required": ["github"],

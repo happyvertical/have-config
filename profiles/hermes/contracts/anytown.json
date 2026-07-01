@@ -64,6 +64,11 @@
       "worker_record_required": true
     }
   },
+  "board": {
+    "enabled": true,
+    "project": "happyvertical/7",
+    "label": "anytown"
+  },
   "permissions": {
     "github": {
       "anytown/anytown.ai": "maintain",
