@@ -95,11 +95,10 @@
     {
       "capability": "github-project-board",
       "vars": [
-        "HV_AGENT_CONTRACT",
-        "GH_TOKEN"
+        "HV_AGENT_CONTRACT"
       ],
       "default_enabled": false,
-      "description": "GitHub Projects board #7 access for the hermes-board procedure. GH_TOKEN (or GITHUB_TOKEN) must carry read:project and project scope."
+      "description": "GitHub Projects board #7 access for the hermes-board procedure. Authenticate gh with a token carrying read:project and project scope (GH_TOKEN or GITHUB_TOKEN, or gh's stored auth); check-setup verifies the scope rather than a fixed token env var name."
     }
   ],
   "services": []
