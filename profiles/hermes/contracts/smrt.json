@@ -68,6 +68,11 @@
       "worker_record_required": true
     }
   },
+  "board": {
+    "enabled": true,
+    "project": "happyvertical/7",
+    "label": "smrt"
+  },
   "permissions": {
     "github": {
       "happyvertical/smrt": "maintain",

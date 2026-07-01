@@ -66,6 +66,11 @@
       "worker_record_required": true
     }
   },
+  "board": {
+    "enabled": true,
+    "project": "happyvertical/7",
+    "label": "ergot"
+  },
   "permissions": {
     "github": {
       "happyvertical/ergot.io": "maintain",
